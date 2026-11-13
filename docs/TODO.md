@@ -8,7 +8,7 @@ Tracks the whole server up to v1. Each version's own docs live in its folder:
 - **After v0.1**: parsing and the metadata store.
 
 Approach: design the core pieces first, then build thin end-to-end slices, each tested against real uploads.
-The task lists are settled. Each task gets its own detail doc before it is built.
+The task lists are settled. Tasks get no detail docs: the code is the truth, and the tests are the list of behaviors.
 
 ## Todo files
 
@@ -25,11 +25,12 @@ Order: v0.1 is the session store. After v0.1: metadata-storage design, then pars
 ## Decisions so far
 
 - **Upload contract**: already fixed by the pi-agent `session-upload` extension (`~/Project/agents-infra/pi-agent/src/session-upload/upload.ts`):
-  - `PUT <endpoint>/sessions/<machineId>/<sessionId>`, body = the raw JSONL session file, `content-type: application/x-ndjson`.
+  - `PUT <endpoint>/v1/sessions/<machineId>/<sessionId>`, body = the raw JSONL session file, `content-type: application/x-ndjson`.
   - `machineId` matches `^[A-Za-z0-9._-]+$`; both path segments are URL-encoded.
   - The server replaces whatever it has. Any 2xx means success; on an error the client shows the first 200 chars of the body.
   - Client: 15 s timeout, no retry. Extra headers from the client config. The server ignores them because there is no auth.
   - The request carries no session type and no tool-output files.
+  - Change pending: the extension still calls the unprefixed `/sessions/...`; it moves to `/v1` before task 1.4 ([v0.1/tech-stack-decision.md](v0.1/tech-stack-decision.md#api-style-rest)).
 - **No auth in v1**: personal system; auth lives in the infrastructure (e.g. Cloudflare Access).
 - **No versioning in v1**: a re-upload overwrites. The upload history table records every upload (hash, size, time), but it is a log, not versioning: old versions cannot be read back through the API.
 - **No retention in v1**: neither the policy nor the code.

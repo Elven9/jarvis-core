@@ -30,7 +30,7 @@ Parsing is not part of this file; see [../parsing-todo.md](../parsing-todo.md) (
 - Body checks: no size limit for now; an empty body is rejected.
 - Content type must be text: `text/*` or `application/x-ndjson` (what the extension sends). Anything else, or no content type, is rejected.
 - Success: `200` only, empty body. Errors use a 4xx/5xx status with a short plain-text body (the client shows its first 200 chars).
-- Read: one route only, `GET /sessions/{machineId}/{sessionId}` (mirrors the PUT path), returns the raw bytes with `content-type: application/x-ndjson` and the sha256 as `ETag`. No list API yet.
+- Read: one route only, `GET /v1/sessions/{machineId}/{sessionId}` (mirrors the PUT path), returns the raw bytes with `content-type: application/x-ndjson` and the sha256 as `ETag`. No list API yet.
 
 ### Still open
 
@@ -38,18 +38,18 @@ Parsing is not part of this file; see [../parsing-todo.md](../parsing-todo.md) (
 
 ## Step 0: Foundations
 
-| # | Task | Done when | Detail doc |
-|---|------|-----------|------------|
-| 0.1 | **Session identity**: global ID = `(type, machineId, sessionId)`, type defaulting to `pi`; fix the string form (separator, escaping) and the validation rules | Go ID type with format/parse round-trip tests | `0.1-identity.md` |
-| 0.2 | **Storage interfaces**: `BlobStore` (sha256 content-addressed) and `SessionStore` (the upload record) | Go interfaces plus a shared contract test suite that any implementation must pass | `0.2-storage-interfaces.md` |
-| 0.3 | **Project skeleton**: package layout, config, HTTP server, logging, test harness, task runner (`just` or `make`, decided here), two-stage Dockerfile (see [tech-stack-decision.md](tech-stack-decision.md#deployment-container)) | `go test ./...` passes on the empty skeleton; the server starts locally and in its container | `0.3-skeleton.md` |
+| # | Task | Done when |
+|---|------|-----------|
+| 0.1 | **Session identity**: global ID = `(type, machineId, sessionId)`, type defaulting to `pi`; fix the string form (separator, escaping) and the validation rules | Go ID type with format/parse round-trip tests |
+| 0.2 | **Storage interfaces**: `BlobStore` (sha256 content-addressed) and `SessionStore` (the upload record) | Go interfaces plus a shared contract test suite that any implementation must pass |
+| 0.3 | **Project skeleton**: package layout, config, HTTP server, logging, test harness, task runner (`just`), two-stage Dockerfile (see [tech-stack-decision.md](tech-stack-decision.md#deployment-container)) | `go test ./...` passes on the empty skeleton; the server starts locally and in its container |
 
 ## Slice 1: Upload and raw store
 
-| # | Task | Done when | Detail doc |
-|---|------|-----------|------------|
-| 1.1 | Local FS `BlobStore` (sha256 path, atomic write, dedupe) | Passes the 0.2 contract tests | `1.1-blob-fs.md` |
-| 1.2 | SQLite `SessionStore` (upsert by ID, current blob hash, size, timestamps, upload history table) plus migrations | Passes the 0.2 contract tests | `1.2-session-sqlite.md` |
-| 1.3 | `PUT /sessions/{machineId}/{sessionId}` matching the extension contract exactly: ID validation, no size limit (empty body rejected), content-type check, overwrite, `200` with an empty body, short plain-text error bodies | Contract tests modeled on the extension's `test-server.ts` cases pass | `1.3-upload-api.md` |
-| 1.4 | **End-to-end check**: the real pi `/upload` against the server running locally in its container | A real session lands, overwrites, and is byte-identical on disk | `1.4-e2e.md` |
-| 1.5 | Read API: `GET /sessions/{machineId}/{sessionId}` returns one raw session (list API later) | Can fetch what was uploaded, byte-identical | `1.5-read-api.md` |
+| # | Task | Done when |
+|---|------|-----------|
+| 1.1 | Local FS `BlobStore` (sha256 path, atomic write, dedupe) | Passes the 0.2 contract tests |
+| 1.2 | SQLite `SessionStore` (upsert by ID, current blob hash, size, timestamps, upload history table) plus migrations | Passes the 0.2 contract tests |
+| 1.3 | `PUT /v1/sessions/{machineId}/{sessionId}` matching the extension contract exactly: ID validation, no size limit (empty body rejected), content-type check, overwrite, `200` with an empty body, short plain-text error bodies | Contract tests modeled on the extension's `test-server.ts` cases pass |
+| 1.4 | **End-to-end check**: the real pi `/upload` against the server running locally in its container (needs the extension moved to `/v1`) | A real session lands, overwrites, and is byte-identical on disk |
+| 1.5 | Read API: `GET /v1/sessions/{machineId}/{sessionId}` returns one raw session (list API later) | Can fetch what was uploaded, byte-identical |

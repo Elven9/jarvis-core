@@ -7,15 +7,15 @@ Decisions on how the v0.1 server is built. Feature decisions live in the todo fi
 The server is a RESTful HTTP server.
 
 - Resources map to URLs: sessions now, reports, references and tool calls later.
-- The upload contract is already REST: `PUT /sessions/{machineId}/{sessionId}` replaces the stored session and is idempotent; `GET` on the same path reads it back.
+- The upload contract is already REST: `PUT /v1/sessions/{machineId}/{sessionId}` replaces the stored session and is idempotent; `GET` on the same path reads it back.
 - Raw session bytes go over the wire as is; metadata uses JSON.
 
-Open:
+Decided:
 
-- API version prefix: the extension calls `/sessions/...` with no prefix, so that route stays unprefixed. No prefix at all, or `/v1` for new routes only?
-- Where the session type goes in URLs once there is more than `pi` (e.g. `/sessions/{type}/{machineId}/{sessionId}`, keeping the current path as the `pi` form).
-- Actions that are not resources (e.g. manual re-parse): model as creating a resource, e.g. `POST /sessions/{m}/{s}/parse-jobs`?
-- Error format for future JSON routes (`application/problem+json`, RFC 9457?). The upload route keeps short plain-text errors because the client shows them.
+- **Version prefix**: every route lives under `/v1`, the upload route included. The server does not serve the unprefixed `/sessions/...` path; the pi-agent `session-upload` extension moves to `/v1/sessions/...` (pending, needed before task 1.4).
+- **Session type in URLs**: a query parameter, `?type=<type>`, defaulting to `pi`. The path stays `/v1/sessions/{machineId}/{sessionId}` for every type. How a client sets a non-`pi` type is P6.
+- **Errors on JSON routes**: RFC 9457 `application/problem+json` (`type`, `title`, `status`, `detail`, plus our own fields when needed). The upload route keeps short plain-text errors because the client shows them.
+- **Actions that are not resources** (e.g. manual re-parse): a top-level resource created with `POST`, the target in the JSON body, e.g. `POST /v1/parse-jobs` with `{"type": "pi", "machineId": "…", "sessionId": "…"}`; then `GET /v1/parse-jobs/{jobId}`. The full ID stays together in one place, `sessionId` needs no URL encoding, and the body can grow (batch re-parse) without new routes. Filtering by session, if ever needed, uses query parameters.
 
 ## HTTP framework: Fiber v3
 
@@ -30,7 +30,7 @@ Open:
 ```go
 fiber.New(fiber.Config{
     CaseSensitive:     true, // IDs and routes are case-sensitive
-    StrictRouting:     true, // /sessions/a/b/ is not /sessions/a/b
+    StrictRouting:     true, // /v1/sessions/a/b/ is not /v1/sessions/a/b
     StreamRequestBody: true, // required by the upload route: streaming, no size cap
     Immutable:         true, // ctx values are safe to keep after the handler
     // UnescapePath stays false (default); handlers decode params themselves
@@ -43,7 +43,7 @@ fiber.New(fiber.Config{
 2. **`StreamRequestBody` is required for the upload route.** With it, a body larger than `BodyLimit` is streamed to the handler with no cap (10 MB tested). It is an app-wide setting, not per route.
    - A body smaller than `BodyLimit` is still buffered, and then `c.Req().BodyStream()` is nil. The upload handler must use `BodyStream()` when it is non-nil and `bytes.NewReader(c.Body())` otherwise.
    - `Body()`, form values and binders still apply `BodyLimit`; only `BodyStream()` reads past it.
-3. **Case sensitivity.** `CaseSensitive` defaults to false (`/SESSIONS/...` would match `/sessions/...`). Param values keep their original case either way. We set it to true to match the case-sensitive ID decision.
+3. **Case sensitivity.** `CaseSensitive` defaults to false (`/V1/SESSIONS/...` would match `/v1/sessions/...`). Param values keep their original case either way. We set it to true to match the case-sensitive ID decision.
 4. **Params are not percent-decoded.** The extension URL-encodes both segments; by default `c.Params` returns them still encoded (`Ab%3Acd%20e`).
    - `UnescapePath: true` decodes before routing, so an encoded `/` (`%2F`) would split into a new path segment and the route would not match. We keep it false and decode each param with `url.PathUnescape` in the handler, then validate it.
    - The router always normalizes the path (RFC 3986 6.2.2): escapes of unreserved characters are decoded, and `.`/`..` segments are removed. So an ID of `.` or `..` never reaches the handler as a param.
@@ -140,6 +140,10 @@ Settings (initial):
 | `JARVIS_DATA_DIR` | `./data` (`/data` in the container image) | SQLite file and blobs |
 | `JARVIS_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `JARVIS_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown limit (Go duration) |
+
+## Task runner: just
+
+[just](https://github.com/casey/just), with a `justfile` at the repo root for the common commands (build, test, run, image build).
 
 ## Deployment: container
 
