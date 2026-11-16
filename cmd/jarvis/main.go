@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/gofiber/fiber/v3"
@@ -17,7 +18,11 @@ import (
 	"github.com/Elven9/jarvis-core/internal/config"
 	"github.com/Elven9/jarvis-core/internal/logging"
 	"github.com/Elven9/jarvis-core/internal/server"
+	"github.com/Elven9/jarvis-core/internal/sqlite"
 )
+
+// dbFile is the SQLite file inside the data directory.
+const dbFile = "jarvis.db"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -40,6 +45,18 @@ func run(ctx context.Context, environ []string, stdout io.Writer) error {
 	slog.SetDefault(logger)
 	log.SetLogger(logging.NewFiberLogger(logger))
 	logger.Info("starting", "config", cfg)
+
+	// The schema is migrated before the server listens; any error stops startup.
+	db, err := sqlite.Open(ctx, filepath.Join(cfg.DataDir, dbFile), logger)
+	if err != nil {
+		logger.Error("cannot open database", "error", err.Error())
+		return err
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("close database", "error", err.Error())
+		}
+	}()
 
 	app := server.New(logger)
 	err = app.Listen(cfg.Addr, fiber.ListenConfig{

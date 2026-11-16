@@ -3,11 +3,16 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // startRun runs the server in the background and returns its log records as they appear.
@@ -57,7 +62,7 @@ func waitFor(t *testing.T, records <-chan map[string]any, msg string) map[string
 func TestRunServesUntilContextIsDoneThenStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	records, done := startRun(t, ctx, []string{"JARVIS_ADDR=127.0.0.1:0", "JARVIS_SHUTDOWN_TIMEOUT=2s"})
+	records, done := startRun(t, ctx, []string{"JARVIS_ADDR=127.0.0.1:0", "JARVIS_SHUTDOWN_TIMEOUT=2s", "JARVIS_DATA_DIR=" + t.TempDir()})
 
 	starting := waitFor(t, records, "starting")
 	if cfg, ok := starting["config"].(map[string]any); !ok || cfg["addr"] != "127.0.0.1:0" || cfg["shutdown_timeout"] != "2s" {
@@ -87,6 +92,42 @@ func TestRunServesUntilContextIsDoneThenStops(t *testing.T) {
 		t.Fatal("run did not return after the context was canceled")
 	}
 	waitFor(t, records, "stopped")
+}
+
+func TestRunMigratesDatabaseBeforeListening(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	dataDir := filepath.Join(t.TempDir(), "data")
+	records, done := startRun(t, ctx, []string{"JARVIS_ADDR=127.0.0.1:0", "JARVIS_DATA_DIR=" + dataDir})
+	waitFor(t, records, "listening")
+
+	db, err := sql.Open("sqlite3", "file:"+filepath.Join(dataDir, "jarvis.db")+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name IN ('sessions', 'uploads')").Scan(&n); err != nil || n != 2 {
+		t.Errorf("schema tables = %d, %v; want sessions and uploads", n, err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("run: %v", err)
+	}
+}
+
+func TestRunRefusesToStartWhenDatabaseCannotOpen(t *testing.T) {
+	notADir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notADir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	records, done := startRun(t, t.Context(), []string{"JARVIS_ADDR=127.0.0.1:0", "JARVIS_DATA_DIR=" + notADir})
+	if r := waitFor(t, records, "cannot open database"); r["level"] != "ERROR" {
+		t.Errorf("record = %v, want level ERROR", r)
+	}
+	if err := <-done; err == nil {
+		t.Error("run returned nil, want the database error")
+	}
 }
 
 func TestRunRefusesToStartWithInvalidConfig(t *testing.T) {
