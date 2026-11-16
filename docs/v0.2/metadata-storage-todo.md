@@ -45,12 +45,8 @@ Replaces the old after-v0.1 `metadata-storage-todo.md`. Builds on [../v0.1/sessi
 ### Read API
 
 - `GET /v1/sessions/{machineId}/{sessionId}/meta`: the parsed metadata, the metrics (`null` when none) and the parser version, as JSON. Errors use RFC 9457 `application/problem+json`, like the raw read route.
-- `GET /v1/sessions`: list sessions, newest upload (`last_uploaded_at`) first. Stable order: ties broken by the session ID. Cursor pagination, no filters.
-
-### Still open
-
-- List rows: which fields (ID, upload time, size, a metadata summary, metrics totals?).
-- List page size: default and maximum.
+- `GET /v1/sessions`: list sessions, newest upload (`last_uploaded_at`) first. Stable order: ties broken by the session ID. No pagination and no filters in v0.2: one response with every session.
+- List row: the machine ID and session ID, the upload time, a metadata summary (name, tags and agent version) and the metrics totals (`null` when none).
 
 ## Step 0: Foundations
 
@@ -72,7 +68,7 @@ Replaces the old after-v0.1 `metadata-storage-todo.md`. Builds on [../v0.1/sessi
 | # | Task | Done when |
 |---|------|-----------|
 | 2.1 | `GET /v1/sessions/{machineId}/{sessionId}/meta` | Returns what the upload stored; `404` problem for an unknown session |
-| 2.2 | `GET /v1/sessions`: list with cursor pagination | Pages are stable and newest-upload first; walking every page returns each session once (no concurrent uploads) |
+| 2.2 | `GET /v1/sessions`: list, no pagination | Newest-upload first in a stable order; each session appears once with its machine ID, session ID, upload time, name, tags, agent version and metrics totals |
 | 2.3 | **End-to-end check**: the real pi `/upload` against the server in its container | A real session lands; its meta route and the list show it |
 
 ## Not in v0.2
@@ -81,5 +77,5 @@ Replaces the old after-v0.1 `metadata-storage-todo.md`. Builds on [../v0.1/sessi
 - Tool calls and subagents ([../result-reference-todo.md](../result-reference-todo.md))
 - Session relationships (parent session, subagent child sessions): every session stands alone
 - A dedicated `MetricsStore` with time series, and the metrics query route
-- List filters
+- List pagination and filters
 - Transactions or rollback across the write sequence
