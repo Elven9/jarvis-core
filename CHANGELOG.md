@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/Elven9/jarvis-core/compare/v0.1.0...v0.2.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **server:** uploads that are not a pi session of format 3 the library can parse, or whose header ID differs from the URL sessionId, are rejected with 422.
+
+### Features
+
+* **metadata:** add metadata store interface and contract tests ([25ae45c](https://github.com/Elven9/jarvis-core/commit/25ae45caba76b44a45b2fc25b76ec32c590fb293))
+* **metadata:** add SQLite metadata store and migration ([4f19075](https://github.com/Elven9/jarvis-core/commit/4f1907540115285b3cb4092f9d8e13ee2d47be11))
+* **metadata:** link every metadata to exactly one session record ([098b3c0](https://github.com/Elven9/jarvis-core/commit/098b3c075535145dccca96efc3c4ce939c6f6f1f))
+* **server:** add GET /v1/sessions list route ([a3100e7](https://github.com/Elven9/jarvis-core/commit/a3100e765ce2b91199ddcc22c1cb0ba4f76fcbe7))
+* **server:** add GET /v1/sessions/{machineId}/{sessionId}/meta route ([ef47271](https://github.com/Elven9/jarvis-core/commit/ef47271baabd681e016c315132d58f19f5f6a541))
+* **server:** parse uploads inline and store their metadata ([9484e37](https://github.com/Elven9/jarvis-core/commit/9484e37b884455a6007fc449cf72bfd15f4141bf))
+
 ## 0.1.0 (2026-11-16)
 
 
