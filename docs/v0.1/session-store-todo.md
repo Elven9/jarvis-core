@@ -2,7 +2,7 @@
 
 Goal: the pi `/upload` command can upload a session, overwrite it, and read it back byte-identical.
 The sandbox orchestrator is out of scope here (sandbox sessions are for the agents only).
-Parsing is not part of this file; see [../parsing-todo.md](../parsing-todo.md) (after v0.1).
+Parsing is not part of this file; see [../v0.2/metadata-storage-todo.md](../v0.2/metadata-storage-todo.md).
 
 ## Decisions
 

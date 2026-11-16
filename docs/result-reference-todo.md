@@ -1,7 +1,8 @@
 # Result and reference system TODO (separate feature, not v0.1)
 
 Source: [proposal.md](proposal.md)
-Builds on the v0.1 session store ([v0.1/session-store-todo.md](v0.1/session-store-todo.md)) and on parsing ([parsing-todo.md](parsing-todo.md)).
+Builds on the v0.1 session store ([v0.1/session-store-todo.md](v0.1/session-store-todo.md)) and on parsing ([v0.2/metadata-storage-todo.md](v0.2/metadata-storage-todo.md)).
+v0.2 leaves out the library's `ToolCalls()` and `Subagents()`; storing them belongs here.
 
 ## Tool-call references
 
