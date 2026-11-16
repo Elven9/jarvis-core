@@ -181,6 +181,80 @@ func tagList(md sessionparser.Metadata) []string {
 	return append([]string{}, md.Tags.Tags...)
 }
 
+func TestReuploadReplacesMetadataWithNothingLeftOver(t *testing.T) {
+	env := newSessionsEnv(t)
+	first := golden(t, "tags") // tags and metrics
+	sid := headerID(t, first)
+	env.putOK(t, "mac", sid, ndjson, first)
+	if m, err := env.meta(t, "mac", sid); err != nil || m.Metadata.Tags == nil || m.Metrics == nil {
+		t.Fatalf("first upload: metadata = %+v, %v; want tags and metrics", m, err)
+	}
+
+	second := withHeaderID(t, golden(t, "no-metrics"), sid) // no tags, no metrics, no name
+	env.putOK(t, "mac", sid, ndjson, second)
+
+	got, err := env.meta(t, "mac", sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := session.NewID(session.TypePi, "mac", sid)
+	want, err := metadata.Parse(bytes.NewReader(second), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata.Tags != nil || got.Metrics != nil || got.Metadata.Name != nil || got.Metadata.AgentVersion != nil {
+		t.Errorf("after re-upload: tags %v, metrics %v, name %v, agent version %v; want all gone",
+			got.Metadata.Tags, got.Metrics, got.Metadata.Name, got.Metadata.AgentVersion)
+	}
+	if got.Metadata.CWD != want.Metadata.CWD || !got.Metadata.StartedAt.Equal(want.Metadata.StartedAt) ||
+		!reflect.DeepEqual(modelIDs(got.Metadata), modelIDs(want.Metadata)) {
+		t.Errorf("after re-upload: metadata = %+v, want the second upload's %+v", got.Metadata, want.Metadata)
+	}
+}
+
+func TestReuploadWithClearedTagsStoresClearedTags(t *testing.T) {
+	env := newSessionsEnv(t)
+	first := golden(t, "tags")
+	sid := headerID(t, first)
+	env.putOK(t, "mac", sid, ndjson, first)
+
+	// The same session after /tags --clear: one more pi-agent.tags entry with an empty list.
+	second := appendEntry(t, first, "pi-agent.tags", `{"version":1,"tags":[],"source":"command"}`)
+	env.putOK(t, "mac", sid, ndjson, second)
+
+	got, err := env.meta(t, "mac", sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata.Tags == nil || len(got.Metadata.Tags.Tags) != 0 || got.Metadata.Tags.Source != "command" {
+		t.Errorf("tags = %+v, want the cleared list set by the command", got.Metadata.Tags)
+	}
+	if got.Metrics == nil {
+		t.Error("metrics = nil, want the metrics the session still has")
+	}
+}
+
+// appendEntry adds a custom entry after the file's last entry.
+func appendEntry(t *testing.T, file []byte, customType, data string) []byte {
+	t.Helper()
+	lines := bytes.Split(bytes.TrimRight(file, "\n"), []byte("\n"))
+	var last struct{ ID string }
+	if err := json.Unmarshal(lines[len(lines)-1], &last); err != nil || last.ID == "" {
+		t.Fatalf("last entry: %v", err)
+	}
+	entry := `{"type":"custom","customType":"` + customType + `","id":"appended1","parentId":"` + last.ID +
+		`","timestamp":"2026-11-16T10:00:00.000Z","data":` + data + "}\n"
+	return append(bytes.Clone(file), entry...)
+}
+
+func modelIDs(md sessionparser.Metadata) []string {
+	var out []string
+	for _, m := range md.Models {
+		out = append(out, m.Provider+"/"+m.ModelID)
+	}
+	return out
+}
+
 type failingMetadata struct{}
 
 func (failingMetadata) Replace(context.Context, metadata.Meta) error {
