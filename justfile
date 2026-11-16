@@ -2,6 +2,11 @@
 
 image := "jarvis-core"
 
+# Image tag, from git. On a release tag it is the version (v0.1.0 -> 0.1.0); after one,
+# <version>-<commits since>-g<commit>; before the first release, the commit. "-dirty" is added
+# when there are uncommitted changes. Never "latest".
+version := `git describe --tags --match 'v*' --always --dirty | sed 's/^v//'`
+
 default:
     @just --list
 
@@ -30,13 +35,17 @@ check: lint test
 run:
     CGO_ENABLED=1 go run ./cmd/jarvis
 
-# Build the container image for this machine's architecture
-image:
-    docker build -t {{image}} .
+# Print the version the image is tagged with
+version:
+    @echo {{version}}
 
-# Run the container image on port 8080 with a named data volume
+# Build the container image for this machine's architecture, tagged with the version
+image:
+    docker build -t {{image}}:{{version}} .
+
+# Run the image of the current version on port 8080 with a named data volume
 image-run:
-    docker run --rm -p 8080:8080 -v jarvis-data:/data {{image}}
+    docker run --rm -p 8080:8080 -v jarvis-data:/data {{image}}:{{version}}
 
 # Remove build output
 clean:
