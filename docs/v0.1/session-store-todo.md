@@ -9,8 +9,9 @@ Parsing is not part of this file; see [../parsing-todo.md](../parsing-todo.md) (
 ### Identity (0.1)
 
 - Global ID = `(type, machineId, sessionId)`. Every upload gets type `pi`; a way to set the type comes later. The type stays in the ID and the primary key, so adding it needs no schema change.
-- `machineId`: what the extension accepts, `^[A-Za-z0-9._-]+$`. Not a UUID. `.` and `..` are rejected (the router removes dot segments).
-- `sessionId`: whatever pi sends (the session header ID), with minimum checks: not empty, no control characters, no `/`, not `.` or `..`, at most 256 bytes. Checked after percent-decoding.
+- `type`: in v0.1 the only accepted type is `pi`. Any other type (including `?type=` on the routes) is rejected; an empty `?type=` is rejected too (only a missing parameter defaults to `pi`).
+- `machineId`: what the extension accepts, `^[A-Za-z0-9._-]+$`, at most 256 bytes. Not a UUID. `.` and `..` are rejected (the router removes dot segments).
+- `sessionId`: whatever pi sends (the session header ID), with minimum checks: not empty, valid UTF-8, no control characters, no `/`, not `.` or `..`, at most 256 bytes. Checked after percent-decoding.
 - Both segments arrive URL-encoded; the handler decodes them (`url.PathUnescape`) and then validates. See [tech-stack-decision.md](tech-stack-decision.md#caveats-checked-against-v370) (Fiber caveat 4).
 - Everything is case-sensitive (type, `machineId`, `sessionId`): IDs are compared byte for byte and never normalized.
 - String form: `type:machineId:sessionId`. `type` and `machineId` cannot contain `:`, so parsing splits on the first two colons; no escaping needed even if `sessionId` contains `:`.
@@ -19,6 +20,7 @@ Parsing is not part of this file; see [../parsing-todo.md](../parsing-todo.md) (
 ### Storage (0.2, 1.1, 1.2)
 
 - `BlobStore.Put` streams: takes an `io.Reader`, hashes (sha256) while writing to a temp file, then renames into place.
+- Filesystem blob layout: `blobs/<first 2 hex chars of the hash>/<full hex hash>`.
 - The filesystem blob store keeps the original bytes, uncompressed. It is a temporary dev store and will be replaced.
 - Session record: ID parts, current blob hash, size, first/last upload time. No `parse_status` column (P3 decides that).
 - Upload history table: every upload appends a row `(session ID, blob hash, size, uploaded_at)`, even when the content is the same as the current one.
@@ -30,7 +32,7 @@ Parsing is not part of this file; see [../parsing-todo.md](../parsing-todo.md) (
 - Body checks: no size limit for now; an empty body is rejected.
 - Content type must be text: `text/*` or `application/x-ndjson` (what the extension sends). Anything else, or no content type, is rejected.
 - Success: `200` only, empty body. Errors use a 4xx/5xx status with a short plain-text body (the client shows its first 200 chars).
-- Read: one route only, `GET /v1/sessions/{machineId}/{sessionId}` (mirrors the PUT path), returns the raw bytes with `content-type: application/x-ndjson` and the sha256 as `ETag`. No list API yet.
+- Read: one route only, `GET /v1/sessions/{machineId}/{sessionId}` (mirrors the PUT path), returns the raw bytes with `content-type: application/x-ndjson`. No `ETag`. Errors use RFC 9457 `application/problem+json`. No list API yet.
 
 ### Still open
 
