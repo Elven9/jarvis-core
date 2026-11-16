@@ -15,9 +15,11 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
 
+	"github.com/Elven9/jarvis-core/internal/blob/fsblob"
 	"github.com/Elven9/jarvis-core/internal/config"
 	"github.com/Elven9/jarvis-core/internal/logging"
 	"github.com/Elven9/jarvis-core/internal/server"
+	"github.com/Elven9/jarvis-core/internal/session/sqlitestore"
 	"github.com/Elven9/jarvis-core/internal/sqlite"
 )
 
@@ -58,7 +60,14 @@ func run(ctx context.Context, environ []string, stdout io.Writer) error {
 		}
 	}()
 
+	blobs, err := fsblob.New(filepath.Join(cfg.DataDir, "blobs"), filepath.Join(cfg.DataDir, "tmp"))
+	if err != nil {
+		logger.Error("cannot open blob store", "error", err.Error())
+		return err
+	}
+
 	app := server.New(logger)
+	(&server.Sessions{Blobs: blobs, Sessions: sqlitestore.New(db)}).Register(app)
 	err = app.Listen(cfg.Addr, fiber.ListenConfig{
 		DisableStartupMessage: true,
 		ListenerNetwork:       fiber.NetworkTCP, // IPv4 and IPv6; Fiber defaults to IPv4 only

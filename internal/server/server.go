@@ -34,6 +34,14 @@ func errorHandler(c fiber.Ctx, err error) error {
 	return c.Status(code).SendString(msg)
 }
 
+type logAttrsKey struct{}
+
+// setLogAttrs adds fields to the request's access log record, e.g. the session ID parts.
+func setLogAttrs(c fiber.Ctx, attrs ...slog.Attr) {
+	prev, _ := c.Locals(logAttrsKey{}).([]slog.Attr)
+	c.Locals(logAttrsKey{}, append(prev, attrs...))
+}
+
 // accessLog writes one record per request. It runs the error handler itself,
 // so the logged status is the one sent, and returns nil so the error is handled once.
 // Request bodies and headers are never logged.
@@ -61,6 +69,9 @@ func accessLog(logger *slog.Logger) fiber.Handler {
 		}
 		if size >= 0 {
 			attrs = append(attrs, slog.Int64("size", size))
+		}
+		if extra, ok := c.Locals(logAttrsKey{}).([]slog.Attr); ok {
+			attrs = append(attrs, extra...)
 		}
 		if err != nil {
 			attrs = append(attrs, slog.String("error", err.Error()))
