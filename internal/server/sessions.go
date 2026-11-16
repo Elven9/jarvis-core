@@ -36,6 +36,7 @@ const maxErrorBody = 200
 func (s *Sessions) Register(app *fiber.App) {
 	app.Put("/v1/sessions/:machineId/:sessionId", s.upload)
 	app.Get("/v1/sessions/:machineId/:sessionId", s.read)
+	app.Get("/v1/sessions/:machineId/:sessionId/meta", s.readMeta)
 }
 
 // read answers the session's current raw bytes as application/x-ndjson.
