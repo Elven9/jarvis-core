@@ -3,3 +3,5 @@ bin
 data
 Dockerfile
 .dockerignore
+.env
+.pi

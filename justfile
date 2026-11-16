@@ -47,6 +47,18 @@ image:
 image-run:
     docker run --rm -p 8080:8080 -v jarvis-data:/data {{image}}:{{version}}
 
+# Build the image of the current version and start the server and the tunnel
+up: image
+    IMAGE_TAG={{version}} docker compose up -d --remove-orphans
+
+# Stop the server and the tunnel (data is kept)
+down:
+    IMAGE_TAG={{version}} docker compose down
+
+# Follow the logs of the server and the tunnel
+logs:
+    IMAGE_TAG={{version}} docker compose logs -f
+
 # Remove build output
 clean:
     rm -rf bin

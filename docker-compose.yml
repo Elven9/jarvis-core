@@ -1,0 +1,49 @@
+# jarvis-core behind a Cloudflare Tunnel. The tunnel is the only way in from outside;
+# the server is also published on 127.0.0.1:8080 for local access on the host.
+#
+#   Internet ──► Cloudflare edge (TLS + Access) ──► cloudflared ──► jarvis:8080
+#
+# The server has no auth of its own: the public hostname must be behind a Cloudflare
+# Access application before the tunnel goes live.
+#
+# Start with `just up`: it builds jarvis-core:<version> and sets IMAGE_TAG to it.
+# Secrets come from .env (git-ignored).
+name: jarvis-core
+
+services:
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:2026.11.0
+    container_name: jarvis-core-tunnel
+    restart: unless-stopped
+    networks:
+      - jarvis-network
+    depends_on:
+      - jarvis
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+
+  jarvis:
+    # Built locally by `just image`; never pulled.
+    image: jarvis-core:${IMAGE_TAG:?set IMAGE_TAG, or start with just up}
+    pull_policy: never
+    container_name: jarvis-core
+    restart: unless-stopped
+    # Longer than JARVIS_SHUTDOWN_TIMEOUT (10s), so in-flight requests can finish.
+    stop_grace_period: 15s
+    networks:
+      - jarvis-network
+    ports:
+      # Local-only direct access, bypassing the tunnel.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # SQLite database and blobs. Same volume as `just image-run`.
+      - jarvis-data:/data
+
+networks:
+  jarvis-network:
+    driver: bridge
+
+volumes:
+  jarvis-data:
+    name: jarvis-data

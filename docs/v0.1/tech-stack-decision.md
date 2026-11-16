@@ -173,11 +173,22 @@ Everything the server stores lives under `JARVIS_DATA_DIR` (for now):
 
 - Plain HTTP, no TLS in the server. It listens on `JARVIS_ADDR`; the port and bind address are chosen when the container is run.
 
+### Docker Compose and Cloudflare Tunnel
+
+`docker-compose.yml` runs two services on a private network: `jarvis` (the server) and `cloudflare-tunnel` (`cloudflared`, pinned to a release, never `latest`).
+
+- The tunnel's public hostname points at `http://jarvis:8080`. TLS ends at Cloudflare.
+- The server has no auth of its own, so the hostname must be behind a Cloudflare Access application (a service token for clients) before the tunnel goes live.
+- The server is also published on `127.0.0.1:8080` for local access on the host.
+- `TUNNEL_TOKEN` comes from `.env` (git-ignored, from `.env.example`).
+- The `jarvis` image is built locally (`pull_policy: never`) and tagged with the version: `just up` builds `jarvis-core:<version>` and starts both services with it. `just down` stops them; `just logs` follows the logs.
+- Data lives in the named volume `jarvis-data`, the same one `just image-run` uses.
+
 ## Future work: deployment
 
 Not part of v0.1; collected here so the notes are not lost.
 
-- **Reverse proxy and Cloudflare Tunnel/Access** in front of the server. TLS ends at Cloudflare; Access does the auth. The container port should then be reachable only by the proxy.
+- **Reverse proxy** in front of the server, if path rules or limits are needed beyond what Cloudflare does.
 - **Client IP**: the server will see the proxy's address. Fiber's `TrustProxy` stays off unless real client IPs are needed; then trust only the proxy.
 - **Body size limits in front of the server** apply even though the server has none: nginx `client_max_body_size` defaults to 1 MB; Cloudflare caps request bodies by plan (about 100 MB on Free/Pro, unverified). The proxy needs a large body limit and long enough timeouts.
 - **Multi-arch image** (`docker buildx`, arm64 + amd64), if one image has to run on both.
