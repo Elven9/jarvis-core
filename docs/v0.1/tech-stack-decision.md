@@ -149,10 +149,11 @@ Settings (initial):
 
 The server runs as a container image, built in two stages.
 
-- **Base image**: `ubuntu:26.10` for both stages (Ubuntu 26.10 "stonking"). A version tag: it still moves with Ubuntu's image updates, so builds are not bit-for-bit reproducible. 26.10 is an interim release, not LTS (`26.04` is the LTS), with about 9 months of support.
-- **Builder stage**: installs a C compiler (`gcc`, `libc6-dev`) and the Go toolchain at the version in `go.mod` (official tarball, checksum verified, not the Ubuntu package, which may lag). Builds the server with `CGO_ENABLED=1`.
-- **Runner stage**: only the server binary is copied in; runs as a non-root user; `JARVIS_DATA_DIR=/data`, a mounted volume.
-- Builder and runner use the same base image, so the cgo binary runs against the same glibc it was built with. Changing one base image means changing both.
+- **Builder stage**: `golang:<go version>-trixie`, the official Go image on Debian 13 "trixie", at the Go version in `go.mod`. It already has the C compiler cgo needs (`gcc`, `libc6-dev`). Builds the server with `CGO_ENABLED=1`.
+- **Runner stage**: `debian:trixie-slim`. Only the server binary is copied in; runs as a non-root user; `JARVIS_DATA_DIR=/data`, a mounted volume.
+- Both stages are on Debian trixie, so the cgo binary runs against the same glibc it was built with. Changing the Debian release means changing both.
+- Base image tags still move with upstream image updates, so builds are not bit-for-bit reproducible.
+- **Image tag**: the release version from git (`git describe`): `0.1.0` on a release tag, `0.1.0-3-gabc1234` between releases, `-dirty` with uncommitted changes. Never `latest`.
 
 ### Data directory
 
@@ -179,7 +180,6 @@ Not part of v0.1; collected here so the notes are not lost.
 - **Reverse proxy and Cloudflare Tunnel/Access** in front of the server. TLS ends at Cloudflare; Access does the auth. The container port should then be reachable only by the proxy.
 - **Client IP**: the server will see the proxy's address. Fiber's `TrustProxy` stays off unless real client IPs are needed; then trust only the proxy.
 - **Body size limits in front of the server** apply even though the server has none: nginx `client_max_body_size` defaults to 1 MB; Cloudflare caps request bodies by plan (about 100 MB on Free/Pro, unverified). The proxy needs a large body limit and long enough timeouts.
-- **Base image upgrade**: `ubuntu:26.10` support ends about 9 months after release; move both stages to the next release around mid-2027 (or to an LTS).
 - **Multi-arch image** (`docker buildx`, arm64 + amd64), if one image has to run on both.
 - **Log driver**: configure rotation in the container runtime (e.g. `json-file` with `max-size`).
 - **Backups**: back up `JARVIS_DATA_DIR`; SQLite through its backup API or with the server stopped, never by copying a live `jarvis.db`.
