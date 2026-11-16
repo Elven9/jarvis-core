@@ -12,7 +12,7 @@ The server is a RESTful HTTP server.
 
 Decided:
 
-- **Version prefix**: every route lives under `/v1`, the upload route included. The server does not serve the unprefixed `/sessions/...` path; the pi-agent `session-upload` extension moves to `/v1/sessions/...` (pending, needed before task 1.4).
+- **Version prefix**: every route lives under `/v1`, the upload route included. The server does not serve the unprefixed `/sessions/...` path; the pi-agent `session-upload` extension uploads to `/v1/sessions/...` (pi-agent `4949a7e`).
 - **Session type in URLs**: a query parameter, `?type=<type>`, defaulting to `pi`. The path stays `/v1/sessions/{machineId}/{sessionId}` for every type. How a client sets a non-`pi` type is P6. In v0.1 any type other than `pi` is rejected, and so is an empty `?type=`.
 - **Errors on JSON routes**: RFC 9457 `application/problem+json` (`type`, `title`, `status`, `detail`, plus our own fields when needed). The read route (`GET /v1/sessions/...`) uses them too. The upload route keeps short plain-text errors because the client shows them.
 - **Actions that are not resources** (e.g. manual re-parse): a top-level resource created with `POST`, the target in the JSON body, e.g. `POST /v1/parse-jobs` with `{"type": "pi", "machineId": "…", "sessionId": "…"}`; then `GET /v1/parse-jobs/{jobId}`. The full ID stays together in one place, `sessionId` needs no URL encoding, and the body can grow (batch re-parse) without new routes. Filtering by session, if ever needed, uses query parameters.

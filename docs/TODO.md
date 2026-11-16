@@ -30,7 +30,6 @@ Order: v0.1 is the session store. After v0.1: metadata-storage design, then pars
   - The server replaces whatever it has. Any 2xx means success; on an error the client shows the first 200 chars of the body.
   - Client: 15 s timeout, no retry. Extra headers from the client config. The server ignores them because there is no auth.
   - The request carries no session type and no tool-output files.
-  - Change pending: the extension still calls the unprefixed `/sessions/...`; it moves to `/v1` before task 1.4 ([v0.1/tech-stack-decision.md](v0.1/tech-stack-decision.md#api-style-rest)).
 - **No auth in v1**: personal system; auth lives in the infrastructure (e.g. Cloudflare Access).
 - **No versioning in v1**: a re-upload overwrites. The upload history table records every upload (hash, size, time), but it is a log, not versioning: old versions cannot be read back through the API.
 - **No retention in v1**: neither the policy nor the code.
