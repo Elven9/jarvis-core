@@ -183,6 +183,7 @@ Everything the server stores lives under `JARVIS_DATA_DIR` (for now):
 - `TUNNEL_TOKEN` comes from `.env` (git-ignored, from `.env.example`).
 - The `jarvis` image is built locally (`pull_policy: never`) and tagged with the version: `just up` builds `jarvis-core:<version>` and starts both services with it. `just down` stops them; `just logs` follows the logs.
 - Data lives in the named volume `jarvis-data`, the same one `just image-run` uses.
+- Moving the data to another server: `just down`, then `just export-volume-data` (writes `backups/jarvis-data-<time>.tgz`, git- and docker-ignored). On the new server, `just import-volume-data <file>` before the first `just up`. File owners (uid 10001) are kept. Export refuses while a container uses the volume; import refuses if the volume already exists.
 
 ## Future work: deployment
 
