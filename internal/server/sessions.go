@@ -34,6 +34,7 @@ const maxErrorBody = 200
 
 // Register adds the session routes to app.
 func (s *Sessions) Register(app *fiber.App) {
+	app.Get("/v1/sessions", s.list)
 	app.Put("/v1/sessions/:machineId/:sessionId", s.upload)
 	app.Get("/v1/sessions/:machineId/:sessionId", s.read)
 	app.Get("/v1/sessions/:machineId/:sessionId/meta", s.readMeta)

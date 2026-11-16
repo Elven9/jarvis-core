@@ -47,6 +47,10 @@ func Run(t *testing.T, newStores func(t *testing.T) Stores) {
 		{"IDPartsRoundTripUnchanged", testIDPartsRoundTripUnchanged},
 		{"GoldenSessionsRoundTrip", testGoldenSessionsRoundTrip},
 		{"ConcurrentReplacesLeaveOneWholeMeta", testConcurrentReplacesLeaveOneWholeMeta},
+		{"ListOfEmptyStoreIsEmpty", testListOfEmptyStoreIsEmpty},
+		{"ListSummarizesEverySession", testListSummarizesEverySession},
+		{"ListIsNewestUploadFirstWithTiesOrderedByID", testListIsNewestUploadFirstWithTiesOrderedByID},
+		{"ListShowsLatestUploadAndMetadata", testListShowsLatestUploadAndMetadata},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -201,6 +205,101 @@ func testConcurrentReplacesLeaveOneWholeMeta(t *testing.T, s Stores) {
 	t.Errorf("Get returned parser version %q, which no Replace wrote", got.ParserVersion)
 }
 
+func testListOfEmptyStoreIsEmpty(t *testing.T, s Stores) {
+	if l := mustList(t, s); len(l) != 0 {
+		t.Errorf("List = %+v, want empty", l)
+	}
+}
+
+func testListSummarizesEverySession(t *testing.T, s Stores) {
+	cleared := minimal(t, "mac", "cleared")
+	cleared.Metadata.Tags = &sessionparser.Tags{Tags: []string{}, Source: "command", At: t0}
+	metas := []metadata.Meta{full(t, "mac", "full"), minimal(t, "mac", "minimal"), cleared}
+	var want []metadata.Summary
+	for i, m := range metas {
+		at := t0.Add(time.Duration(len(metas)-i) * time.Minute) // newest first in metas order
+		mustUpload(t, s, m, at)
+		want = append(want, summaryOf(m, at))
+	}
+	assertSummaries(t, mustList(t, s), want)
+}
+
+func testListIsNewestUploadFirstWithTiesOrderedByID(t *testing.T, s Stores) {
+	t1, t2 := t0.Add(time.Minute), t0.Add(2*time.Minute)
+	uploads := []struct {
+		machineID, sessionID string
+		at                   time.Time
+	}{
+		{"mac", "b", t1}, {"mac", "a", t1}, {"old", "x", t0}, {"linux", "z", t1},
+		{"mac", "c", t2}, {"Mac", "a", t1}, {"mac", "B", t1},
+	}
+	for _, u := range uploads {
+		mustUpload(t, s, minimal(t, u.machineID, u.sessionID), u.at)
+	}
+	// Byte order: upper case before lower case.
+	want := []string{"mac/c", "Mac/a", "linux/z", "mac/B", "mac/a", "mac/b", "old/x"}
+	var got []string
+	for _, sm := range mustList(t, s) {
+		got = append(got, sm.ID.MachineID+"/"+sm.ID.SessionID)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("List order = %v, want %v", got, want)
+	}
+}
+
+func testListShowsLatestUploadAndMetadata(t *testing.T, s Stores) {
+	t1, t2 := t0.Add(time.Minute), t0.Add(2*time.Minute)
+	mustUpload(t, s, full(t, "mac", "s1"), t0)
+	other := full(t, "mac", "s2")
+	mustUpload(t, s, other, t1)
+	reupload := minimal(t, "mac", "s1")
+	mustUpload(t, s, reupload, t2)
+	assertSummaries(t, mustList(t, s), []metadata.Summary{summaryOf(reupload, t2), summaryOf(other, t1)})
+}
+
+// summaryOf is the list row of a session uploaded at with metadata m.
+func summaryOf(m metadata.Meta, at time.Time) metadata.Summary {
+	sm := metadata.Summary{ID: m.ID, UploadedAt: at, Name: m.Metadata.Name, AgentVersion: m.Metadata.AgentVersion}
+	if m.Metadata.Tags != nil {
+		sm.Tags = append([]string{}, m.Metadata.Tags.Tags...)
+	}
+	if m.Metrics != nil {
+		sm.Metrics = &metadata.MetricsSummary{Tokens: m.Metrics.Tokens, CostUSD: m.Metrics.CostUSD, Turns: m.Metrics.Turns}
+	}
+	return sm
+}
+
+func mustList(t *testing.T, s Stores) []metadata.Summary {
+	t.Helper()
+	l, err := s.Metadata.List(t.Context())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	return l
+}
+
+// assertSummaries compares lists of rows: times as instants, and nil tags (no tags
+// entry) apart from empty tags (cleared).
+func assertSummaries(t *testing.T, got, want []metadata.Summary) {
+	t.Helper()
+	norm := func(l []metadata.Summary) []metadata.Summary {
+		out := slices.Clone(l)
+		for i := range out {
+			out[i].UploadedAt = out[i].UploadedAt.UTC()
+			if out[i].Tags != nil {
+				out[i].Tags = append([]string{}, out[i].Tags...)
+			}
+		}
+		return out
+	}
+	g, w := norm(got), norm(want)
+	if !reflect.DeepEqual(g, w) {
+		gj, _ := json.MarshalIndent(g, "", "  ")
+		wj, _ := json.MarshalIndent(w, "", "  ")
+		t.Errorf("List =\n%s\nwant\n%s", gj, wj)
+	}
+}
+
 func id(t *testing.T, machineID, sessionID string) session.ID {
 	t.Helper()
 	sid, err := session.NewID(session.TypePi, machineID, sessionID)
@@ -272,12 +371,27 @@ func minimal(t *testing.T, machineID, sessionID string) metadata.Meta {
 	}
 }
 
-// recordSession records an upload of the session, so metadata can link to it.
+// recordSession records an upload of the session at t0, so metadata can link to it.
 func recordSession(t *testing.T, s Stores, sid session.ID) {
 	t.Helper()
-	u := session.Upload{ID: sid, Blob: blob.Info{Hash: sha256.Sum256([]byte(sid.String())), Size: 1}, UploadedAt: t0}
+	recordSessionAt(t, s, sid, t0)
+}
+
+func recordSessionAt(t *testing.T, s Stores, sid session.ID, at time.Time) {
+	t.Helper()
+	u := session.Upload{ID: sid, Blob: blob.Info{Hash: sha256.Sum256([]byte(sid.String())), Size: 1}, UploadedAt: at}
 	if err := s.Sessions.RecordUpload(t.Context(), u); err != nil {
 		t.Fatalf("RecordUpload(%s): %v", sid, err)
+	}
+}
+
+// mustUpload does what an accepted upload at at does: records the session, then
+// replaces its metadata with m.
+func mustUpload(t *testing.T, s Stores, m metadata.Meta, at time.Time) {
+	t.Helper()
+	recordSessionAt(t, s, m.ID, at)
+	if err := s.Metadata.Replace(t.Context(), m); err != nil {
+		t.Fatalf("Replace(%s): %v", m.ID, err)
 	}
 }
 

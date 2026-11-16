@@ -217,7 +217,13 @@ func (f fixedMeta) Get(_ context.Context, id session.ID) (metadata.Meta, error) 
 	return m, nil
 }
 
+func (fixedMeta) List(context.Context) ([]metadata.Summary, error) { return nil, nil }
+
 type brokenMeta struct{}
+
+func (brokenMeta) List(context.Context) ([]metadata.Summary, error) {
+	return nil, errors.New("database corrupt")
+}
 
 func (brokenMeta) Replace(context.Context, metadata.Meta) error { return errors.New("broken") }
 

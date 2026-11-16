@@ -46,7 +46,7 @@ Replaces the old after-v0.1 `metadata-storage-todo.md`. Builds on [../v0.1/sessi
 
 - `GET /v1/sessions/{machineId}/{sessionId}/meta`: the parsed metadata, the metrics (`null` when none) and the parser version, as JSON. Errors use RFC 9457 `application/problem+json`, like the raw read route.
 - `GET /v1/sessions`: list sessions, newest upload (`last_uploaded_at`) first. Stable order: ties broken by the session ID. No pagination and no filters in v0.2: one response with every session.
-- List row: the machine ID and session ID, the upload time, a metadata summary (name, tags and agent version) and the metrics totals (`null` when none).
+- List row: the machine ID and session ID, the upload time, a metadata summary (name, tags and agent version) and the metrics totals: tokens, cost and turns (`null` when none).
 
 ## Step 0: Foundations
 

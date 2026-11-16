@@ -4,6 +4,7 @@ package metadata
 import (
 	"context"
 	"errors"
+	"time"
 
 	sessionparser "github.com/Elven9/pi-agent/go/pkg/session-parser"
 
@@ -40,4 +41,29 @@ type Store interface {
 	// Get returns the metadata of a session, with Metrics.Samples empty.
 	// It returns an error wrapping ErrNotFound when the session has none.
 	Get(ctx context.Context, id session.ID) (Meta, error)
+
+	// List returns a summary of every session with metadata, newest upload first.
+	// Sessions with the same upload time are ordered by ID: type, machineId, then
+	// sessionId, each compared byte for byte. It is empty, not an error, without sessions.
+	List(ctx context.Context) ([]Summary, error)
+}
+
+// Summary is a session's row in the session list.
+type Summary struct {
+	ID session.ID
+	// UploadedAt is the time of the session's last accepted upload (its session record's).
+	UploadedAt   time.Time
+	Name         *string
+	AgentVersion *string
+	// Tags are nil without a tags entry, and empty (not nil) when cleared.
+	Tags []string
+	// Metrics are nil when the session has none.
+	Metrics *MetricsSummary
+}
+
+// MetricsSummary are the metrics totals shown in the session list.
+type MetricsSummary struct {
+	Tokens  sessionparser.Tokens
+	CostUSD float64
+	Turns   int
 }

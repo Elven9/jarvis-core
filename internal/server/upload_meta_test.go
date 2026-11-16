@@ -265,6 +265,8 @@ func (failingMetadata) Get(context.Context, session.ID) (metadata.Meta, error) {
 	return metadata.Meta{}, metadata.ErrNotFound
 }
 
+func (failingMetadata) List(context.Context) ([]metadata.Summary, error) { return nil, nil }
+
 // headerID is the session ID in a session file's header.
 func headerID(t *testing.T, file []byte) string {
 	t.Helper()

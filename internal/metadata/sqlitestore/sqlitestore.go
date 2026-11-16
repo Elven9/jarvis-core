@@ -4,6 +4,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -299,6 +300,60 @@ func getMetrics(ctx context.Context, q querier, k []any) (*sessionparser.Metrics
 		return nil, fmt.Errorf("cache misses: %w", err)
 	}
 	return &mt, nil
+}
+
+// List reads every session's summary in one query: its metadata joined with its session
+// record (the upload time), its metrics totals and its tags (as a JSON array in position order).
+func (s *Store) List(ctx context.Context) ([]metadata.Summary, error) {
+	out := []metadata.Summary{}
+	err := queryEach(ctx, s.db, `
+		SELECT m.type, m.machine_id, m.session_id, s.last_uploaded_at, m.name, m.agent_version,
+			m.tags_source IS NOT NULL,
+			(SELECT json_group_array(tag) FROM (
+				SELECT tag FROM session_tags t
+				WHERE t.type = m.type AND t.machine_id = m.machine_id AND t.session_id = m.session_id
+				ORDER BY position)),
+			mt.session_id IS NOT NULL,
+			coalesce(mt.tokens_input, 0), coalesce(mt.tokens_output, 0),
+			coalesce(mt.tokens_cache_read, 0), coalesce(mt.tokens_cache_write, 0),
+			coalesce(mt.cost_usd, 0), coalesce(mt.turns, 0)
+		FROM session_metadata m
+		JOIN sessions s USING (type, machine_id, session_id)
+		LEFT JOIN session_metrics mt USING (type, machine_id, session_id)
+		ORDER BY s.last_uploaded_at DESC, m.type, m.machine_id, m.session_id`, nil,
+		func(rows *sql.Rows) error {
+			var (
+				sm                  metadata.Summary
+				typ                 string
+				at                  int64
+				hasTags, hasMetrics bool
+				tags                string
+				ms                  metadata.MetricsSummary
+			)
+			if err := rows.Scan(&typ, &sm.ID.MachineID, &sm.ID.SessionID, &at, &sm.Name, &sm.AgentVersion,
+				&hasTags, &tags, &hasMetrics,
+				&ms.Tokens.Input, &ms.Tokens.Output, &ms.Tokens.CacheRead, &ms.Tokens.CacheWrite,
+				&ms.CostUSD, &ms.Turns); err != nil {
+				return err
+			}
+			sm.ID.Type = session.Type(typ)
+			sm.UploadedAt = fromMilli(at)
+			if hasTags {
+				sm.Tags = []string{}
+				if err := json.Unmarshal([]byte(tags), &sm.Tags); err != nil {
+					return fmt.Errorf("tags of %s: %w", sm.ID, err)
+				}
+			}
+			if hasMetrics {
+				sm.Metrics = &ms
+			}
+			out = append(out, sm)
+			return nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	return out, nil
 }
 
 // queryEach runs query and calls scan for every row.
