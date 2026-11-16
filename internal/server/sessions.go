@@ -28,6 +28,32 @@ type Sessions struct {
 // Register adds the session routes to app.
 func (s *Sessions) Register(app *fiber.App) {
 	app.Put("/v1/sessions/:machineId/:sessionId", s.upload)
+	app.Get("/v1/sessions/:machineId/:sessionId", s.read)
+}
+
+// read answers the session's current raw bytes as application/x-ndjson.
+// Errors are RFC 9457 problem details.
+func (s *Sessions) read(c fiber.Ctx) error {
+	id, err := sessionIDFromRequest(c)
+	if err != nil {
+		return newProblem(fiber.StatusBadRequest, err.Error())
+	}
+	setLogAttrs(c, slog.String("machine_id", id.MachineID), slog.String("session_id", id.SessionID))
+
+	rec, err := s.Sessions.Get(c, id)
+	if errors.Is(err, session.ErrNotFound) {
+		return newProblem(fiber.StatusNotFound, fmt.Sprintf("no session %s", id))
+	}
+	if err != nil {
+		return internalProblem(fmt.Errorf("read %s: %w", id, err))
+	}
+	rc, err := s.Blobs.Open(c, rec.Blob.Hash)
+	if err != nil {
+		return internalProblem(fmt.Errorf("read %s: %w", id, err))
+	}
+	c.Set(fiber.HeaderContentType, "application/x-ndjson")
+	// fasthttp closes rc once the body has been written.
+	return c.SendStream(rc, int(rec.Blob.Size))
 }
 
 // upload stores the body as the session's new content (last write wins).

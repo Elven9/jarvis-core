@@ -24,9 +24,13 @@ func New(logger *slog.Logger) *fiber.App {
 	return app
 }
 
-// errorHandler answers with the status of a *fiber.Error and its message,
-// or with a bare 500 that does not leak internal error text.
+// errorHandler answers a *Problem as RFC 9457 problem details, a *fiber.Error
+// with its status and message as plain text, and anything else with a bare 500
+// that does not leak internal error text.
 func errorHandler(c fiber.Ctx, err error) error {
+	if p, ok := errors.AsType[*Problem](err); ok {
+		return sendProblem(c, p)
+	}
 	code, msg := fiber.StatusInternalServerError, "Internal Server Error"
 	if fe, ok := errors.AsType[*fiber.Error](err); ok {
 		code, msg = fe.Code, fe.Message
