@@ -1,3 +1,5 @@
+github.com/Elven9/pi-agent/go v0.1.0 h1:TmydWZ6J8JtCb7ot4tAKZqojIe3mU6dfmpbrQhXgjGQ=
+github.com/Elven9/pi-agent/go v0.1.0/go.mod h1:iq7QCT676K14h6f5Q73fpJwa30UQEeTqTrrUgev78do=
 github.com/dustin/go-humanize v1.1.0 h1:dbKTrvD0klcbBV/h4AWJdMuZogJACoMlvWIWZ5b2xWg=
 github.com/dustin/go-humanize v1.1.0/go.mod h1:hc1CvRkJMsgxqjmjMQF3QNRAZBwY8AXBAzKYoSX9sFI=
 github.com/fxamacker/cbor/v2 v2.10.0 h1:HVF3T5vYwLqO81ebPirWEPNv2SMrUMD3HLnKgEr6uWE=
