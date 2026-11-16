@@ -3,6 +3,7 @@ package metadatatest
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,19 +16,28 @@ import (
 
 	sessionparser "github.com/Elven9/pi-agent/go/pkg/session-parser"
 
+	"github.com/Elven9/jarvis-core/internal/blob"
 	"github.com/Elven9/jarvis-core/internal/goldens"
 	"github.com/Elven9/jarvis-core/internal/metadata"
 	"github.com/Elven9/jarvis-core/internal/session"
 )
 
-// Run runs the contract tests against stores made by newStore.
-// newStore is called once per subtest and must return an empty store.
-func Run(t *testing.T, newStore func(t *testing.T) metadata.Store) {
+// Stores are the store under test and the session store it links its metadata to
+// (both on the same storage).
+type Stores struct {
+	Metadata metadata.Store
+	Sessions session.Store
+}
+
+// Run runs the contract tests against stores made by newStores.
+// newStores is called once per subtest and must return empty stores.
+func Run(t *testing.T, newStores func(t *testing.T) Stores) {
 	tests := []struct {
 		name string
-		fn   func(t *testing.T, s metadata.Store)
+		fn   func(t *testing.T, s Stores)
 	}{
 		{"GetOfUnknownSessionReturnsErrNotFound", testGetOfUnknownSessionReturnsErrNotFound},
+		{"ReplaceWithoutSessionRecordFailsAndStoresNothing", testReplaceWithoutSessionRecordFailsAndStoresNothing},
 		{"ReplaceStoresEveryField", testReplaceStoresEveryField},
 		{"MissingPartsStayMissing", testMissingPartsStayMissing},
 		{"ClearedTagsStayCleared", testClearedTagsStayCleared},
@@ -40,28 +50,39 @@ func Run(t *testing.T, newStore func(t *testing.T) metadata.Store) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.fn(t, newStore(t))
+			tt.fn(t, newStores(t))
 		})
 	}
 }
 
 var t0 = time.Date(2026, 11, 16, 9, 0, 0, 123_000_000, time.UTC)
 
-func testGetOfUnknownSessionReturnsErrNotFound(t *testing.T, s metadata.Store) {
+func testGetOfUnknownSessionReturnsErrNotFound(t *testing.T, s Stores) {
 	mustReplace(t, s, full(t, "mac", "other"))
-	_, err := s.Get(t.Context(), id(t, "mac", "s1"))
+	_, err := s.Metadata.Get(t.Context(), id(t, "mac", "s1"))
 	if !errors.Is(err, metadata.ErrNotFound) {
 		t.Errorf("Get: got %v, want ErrNotFound", err)
 	}
 }
 
-func testReplaceStoresEveryField(t *testing.T, s metadata.Store) {
+func testReplaceWithoutSessionRecordFailsAndStoresNothing(t *testing.T, s Stores) {
+	mustReplace(t, s, full(t, "mac", "other"))
+	m := full(t, "mac", "s1")
+	if err := s.Metadata.Replace(t.Context(), m); !errors.Is(err, metadata.ErrNoSession) {
+		t.Errorf("Replace without a session record: got %v, want ErrNoSession", err)
+	}
+	if _, err := s.Metadata.Get(t.Context(), m.ID); !errors.Is(err, metadata.ErrNotFound) {
+		t.Errorf("Get after the failed Replace: got %v, want ErrNotFound", err)
+	}
+}
+
+func testReplaceStoresEveryField(t *testing.T, s Stores) {
 	m := full(t, "mac", "s1")
 	mustReplace(t, s, m)
 	assertMeta(t, mustGet(t, s, m.ID), m)
 }
 
-func testMissingPartsStayMissing(t *testing.T, s metadata.Store) {
+func testMissingPartsStayMissing(t *testing.T, s Stores) {
 	m := minimal(t, "mac", "s1")
 	mustReplace(t, s, m)
 	got := mustGet(t, s, m.ID)
@@ -71,7 +92,7 @@ func testMissingPartsStayMissing(t *testing.T, s metadata.Store) {
 	}
 }
 
-func testClearedTagsStayCleared(t *testing.T, s metadata.Store) {
+func testClearedTagsStayCleared(t *testing.T, s Stores) {
 	m := minimal(t, "mac", "s1")
 	m.Metadata.Tags = &sessionparser.Tags{Tags: []string{}, Source: "command", At: t0}
 	mustReplace(t, s, m)
@@ -82,7 +103,7 @@ func testClearedTagsStayCleared(t *testing.T, s metadata.Store) {
 	assertMeta(t, got, m)
 }
 
-func testSamplesAreNotStored(t *testing.T, s metadata.Store) {
+func testSamplesAreNotStored(t *testing.T, s Stores) {
 	m := full(t, "mac", "s1")
 	mustReplace(t, s, m)
 	got := mustGet(t, s, m.ID)
@@ -94,7 +115,7 @@ func testSamplesAreNotStored(t *testing.T, s metadata.Store) {
 	}
 }
 
-func testReplaceLeavesNothingOfThePreviousMeta(t *testing.T, s metadata.Store) {
+func testReplaceLeavesNothingOfThePreviousMeta(t *testing.T, s Stores) {
 	mustReplace(t, s, full(t, "mac", "s1"))
 	second := minimal(t, "mac", "s1")
 	second.ParserVersion = "v0.2.0"
@@ -102,7 +123,7 @@ func testReplaceLeavesNothingOfThePreviousMeta(t *testing.T, s metadata.Store) {
 	assertMeta(t, mustGet(t, s, second.ID), second)
 }
 
-func testSessionsWithDifferentIDsAreSeparate(t *testing.T, s metadata.Store) {
+func testSessionsWithDifferentIDsAreSeparate(t *testing.T, s Stores) {
 	metas := []metadata.Meta{
 		full(t, "mac", "s1"),
 		minimal(t, "Mac", "s1"), // machineId differs in case
@@ -118,7 +139,7 @@ func testSessionsWithDifferentIDsAreSeparate(t *testing.T, s metadata.Store) {
 	}
 }
 
-func testIDPartsRoundTripUnchanged(t *testing.T, s metadata.Store) {
+func testIDPartsRoundTripUnchanged(t *testing.T, s Stores) {
 	m := minimal(t, "m.1_-", "a:b c%2F 中文 é")
 	mustReplace(t, s, m)
 	if got := mustGet(t, s, m.ID); got.ID != m.ID {
@@ -126,7 +147,7 @@ func testIDPartsRoundTripUnchanged(t *testing.T, s metadata.Store) {
 	}
 }
 
-func testGoldenSessionsRoundTrip(t *testing.T, s metadata.Store) {
+func testGoldenSessionsRoundTrip(t *testing.T, s Stores) {
 	for _, f := range goldens.All() {
 		t.Run(f.Name, func(t *testing.T) {
 			ps, err := sessionparser.Parse(bytes.NewReader(f.Data))
@@ -148,7 +169,7 @@ func testGoldenSessionsRoundTrip(t *testing.T, s metadata.Store) {
 	}
 }
 
-func testConcurrentReplacesLeaveOneWholeMeta(t *testing.T, s metadata.Store) {
+func testConcurrentReplacesLeaveOneWholeMeta(t *testing.T, s Stores) {
 	const n = 16
 	metas := make([]metadata.Meta, n)
 	for i := range n {
@@ -159,10 +180,11 @@ func testConcurrentReplacesLeaveOneWholeMeta(t *testing.T, s metadata.Store) {
 		}
 		metas[i].ParserVersion = fmt.Sprintf("v0.%d.0", i)
 	}
+	recordSession(t, s, metas[0].ID)
 	var wg sync.WaitGroup
 	for _, m := range metas {
 		wg.Go(func() {
-			if err := s.Replace(t.Context(), m); err != nil {
+			if err := s.Metadata.Replace(t.Context(), m); err != nil {
 				t.Errorf("Replace: %v", err)
 			}
 		})
@@ -250,16 +272,27 @@ func minimal(t *testing.T, machineID, sessionID string) metadata.Meta {
 	}
 }
 
-func mustReplace(t *testing.T, s metadata.Store, m metadata.Meta) {
+// recordSession records an upload of the session, so metadata can link to it.
+func recordSession(t *testing.T, s Stores, sid session.ID) {
 	t.Helper()
-	if err := s.Replace(t.Context(), m); err != nil {
+	u := session.Upload{ID: sid, Blob: blob.Info{Hash: sha256.Sum256([]byte(sid.String())), Size: 1}, UploadedAt: t0}
+	if err := s.Sessions.RecordUpload(t.Context(), u); err != nil {
+		t.Fatalf("RecordUpload(%s): %v", sid, err)
+	}
+}
+
+// mustReplace records the session, then replaces its metadata with m.
+func mustReplace(t *testing.T, s Stores, m metadata.Meta) {
+	t.Helper()
+	recordSession(t, s, m.ID)
+	if err := s.Metadata.Replace(t.Context(), m); err != nil {
 		t.Fatalf("Replace(%s): %v", m.ID, err)
 	}
 }
 
-func mustGet(t *testing.T, s metadata.Store, sid session.ID) metadata.Meta {
+func mustGet(t *testing.T, s Stores, sid session.ID) metadata.Meta {
 	t.Helper()
-	m, err := s.Get(t.Context(), sid)
+	m, err := s.Metadata.Get(t.Context(), sid)
 	if err != nil {
 		t.Fatalf("Get(%s): %v", sid, err)
 	}

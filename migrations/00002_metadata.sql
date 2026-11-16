@@ -2,7 +2,7 @@
 
 -- Parsed metadata of each session's latest accepted upload, as the session-parser
 -- library returned it (Metadata). Replaced whole on every accepted upload.
--- Not tied to the sessions table: the metadata store stands on its own.
+-- Each row belongs to exactly one session record.
 CREATE TABLE session_metadata (
     type              TEXT    NOT NULL,
     machine_id        TEXT    NOT NULL,
@@ -18,7 +18,8 @@ CREATE TABLE session_metadata (
     tags_source       TEXT,             -- NULL without a pi-agent.tags entry
     tags_at           INTEGER,          -- unix milliseconds; NULL with tags_source
     CHECK ((tags_source IS NULL) = (tags_at IS NULL)),
-    PRIMARY KEY (type, machine_id, session_id)
+    PRIMARY KEY (type, machine_id, session_id),
+    FOREIGN KEY (type, machine_id, session_id) REFERENCES sessions (type, machine_id, session_id)
 ) STRICT, WITHOUT ROWID;
 
 -- The session's tags in their order; no rows for an empty (cleared) list.

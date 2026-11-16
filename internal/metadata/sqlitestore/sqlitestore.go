@@ -32,9 +32,10 @@ func New(db *sql.DB) *Store {
 // execer is what Replace writes through: the transaction.
 type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// Replace deletes the session's metadata (its child rows go with it, by cascade) and
+// Replace checks that the session has a record, deletes its metadata (its child rows go with it, by cascade) and
 // inserts m, in one transaction.
 func (s *Store) Replace(ctx context.Context, m metadata.Meta) (err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -57,6 +58,15 @@ func (s *Store) Replace(ctx context.Context, m metadata.Meta) (err error) {
 
 func replace(ctx context.Context, tx execer, m metadata.Meta) error {
 	k := key(m.ID)
+	var recorded bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM sessions WHERE type = ? AND machine_id = ? AND session_id = ?)`, k...).
+		Scan(&recorded); err != nil {
+		return fmt.Errorf("look up session: %w", err)
+	}
+	if !recorded {
+		return metadata.ErrNoSession
+	}
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM session_metadata WHERE type = ? AND machine_id = ? AND session_id = ?`, k...); err != nil {
 		return fmt.Errorf("delete: %w", err)
