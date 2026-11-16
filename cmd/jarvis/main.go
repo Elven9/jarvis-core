@@ -18,6 +18,7 @@ import (
 	"github.com/Elven9/jarvis-core/internal/blob/fsblob"
 	"github.com/Elven9/jarvis-core/internal/config"
 	"github.com/Elven9/jarvis-core/internal/logging"
+	metasqlite "github.com/Elven9/jarvis-core/internal/metadata/sqlitestore"
 	"github.com/Elven9/jarvis-core/internal/server"
 	"github.com/Elven9/jarvis-core/internal/session/sqlitestore"
 	"github.com/Elven9/jarvis-core/internal/sqlite"
@@ -67,7 +68,12 @@ func run(ctx context.Context, environ []string, stdout io.Writer) error {
 	}
 
 	app := server.New(logger)
-	(&server.Sessions{Blobs: blobs, Sessions: sqlitestore.New(db)}).Register(app)
+	(&server.Sessions{
+		Blobs:    blobs,
+		Sessions: sqlitestore.New(db),
+		Metadata: metasqlite.New(db),
+		Logger:   logger,
+	}).Register(app)
 	err = app.Listen(cfg.Addr, fiber.ListenConfig{
 		DisableStartupMessage: true,
 		ListenerNetwork:       fiber.NetworkTCP, // IPv4 and IPv6; Fiber defaults to IPv4 only

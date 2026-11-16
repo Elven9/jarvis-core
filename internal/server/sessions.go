@@ -11,19 +11,26 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/Elven9/jarvis-core/internal/blob"
+	"github.com/Elven9/jarvis-core/internal/metadata"
 	"github.com/Elven9/jarvis-core/internal/session"
 )
 
-// Sessions serves the raw session routes under /v1/sessions.
+// Sessions serves the session routes under /v1/sessions.
 type Sessions struct {
 	Blobs    blob.Store
 	Sessions session.Store
+	Metadata metadata.Store
+	Logger   *slog.Logger     // error logs of uploads; slog.Default() when nil
 	Now      func() time.Time // upload time; time.Now when nil
 }
+
+// maxErrorBody is how much of an error body the pi extension shows.
+const maxErrorBody = 200
 
 // Register adds the session routes to app.
 func (s *Sessions) Register(app *fiber.App) {
@@ -56,7 +63,16 @@ func (s *Sessions) read(c fiber.Ctx) error {
 	return c.SendStream(rc, int(rec.Blob.Size))
 }
 
-// upload stores the body as the session's new content (last write wins).
+// upload stores the body as the session's new content (last write wins) and its
+// parsed metadata. Write sequence, without a transaction across the steps:
+//
+//  1. store the blob;
+//  2. parse the stored blob and check its header ID (422 when rejected);
+//  3. record the upload (session record and upload history);
+//  4. replace the session's metadata.
+//
+// A rejected upload changes no record; its blob stays. A failed step answers 500 and
+// rolls nothing back. Rejections and failures are logged as errors.
 // It answers 200 with an empty body, or an error status with a short plain-text
 // body, which the pi extension shows to the user.
 func (s *Sessions) upload(c fiber.Ctx) error {
@@ -86,17 +102,66 @@ func (s *Sessions) upload(c fiber.Ctx) error {
 
 	info, err := s.Blobs.Put(c, br)
 	if err != nil {
-		return fmt.Errorf("upload %s: %w", id, err)
+		return s.uploadFailed(c, id, fmt.Errorf("upload %s: store blob: %w", id, err))
+	}
+	meta, err := s.parseBlob(c, id, info.Hash)
+	if errors.Is(err, metadata.ErrInvalidSession) {
+		s.logger().ErrorContext(c, "upload rejected", sessionAttrs(id, err)...)
+		return fiber.NewError(fiber.StatusUnprocessableEntity, truncate(err.Error(), maxErrorBody))
+	}
+	if err != nil {
+		return s.uploadFailed(c, id, fmt.Errorf("upload %s: %w", id, err))
 	}
 	now := time.Now
 	if s.Now != nil {
 		now = s.Now
 	}
 	if err := s.Sessions.RecordUpload(c, session.Upload{ID: id, Blob: info, UploadedAt: now()}); err != nil {
-		return fmt.Errorf("upload %s: %w", id, err)
+		return s.uploadFailed(c, id, fmt.Errorf("upload %s: record upload: %w", id, err))
+	}
+	if err := s.Metadata.Replace(c, meta); err != nil {
+		return s.uploadFailed(c, id, fmt.Errorf("upload %s: store metadata: %w", id, err))
 	}
 	c.Status(fiber.StatusOK)
 	return nil
+}
+
+// parseBlob parses the stored blob; see metadata.Parse for the errors.
+func (s *Sessions) parseBlob(c fiber.Ctx, id session.ID, hash blob.Hash) (metadata.Meta, error) {
+	rc, err := s.Blobs.Open(c, hash)
+	if err != nil {
+		return metadata.Meta{}, fmt.Errorf("open stored blob: %w", err)
+	}
+	defer func() { _ = rc.Close() }()
+	return metadata.Parse(rc, id)
+}
+
+// uploadFailed logs err as an error and returns it, which answers a bare 500.
+func (s *Sessions) uploadFailed(c fiber.Ctx, id session.ID, err error) error {
+	s.logger().ErrorContext(c, "upload failed", sessionAttrs(id, err)...)
+	return err
+}
+
+func (s *Sessions) logger() *slog.Logger {
+	if s.Logger != nil {
+		return s.Logger
+	}
+	return slog.Default()
+}
+
+func sessionAttrs(id session.ID, err error) []any {
+	return []any{slog.String("machine_id", id.MachineID), slog.String("session_id", id.SessionID), slog.String("error", err.Error())}
+}
+
+// truncate cuts s to at most n bytes without splitting a UTF-8 character.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // sessionIDFromRequest reads the ?type= query parameter (pi when missing) and the

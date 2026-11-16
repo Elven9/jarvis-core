@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +22,10 @@ import (
 
 	"github.com/Elven9/jarvis-core/internal/blob"
 	"github.com/Elven9/jarvis-core/internal/blob/fsblob"
+	"github.com/Elven9/jarvis-core/internal/goldens"
 	"github.com/Elven9/jarvis-core/internal/logging"
+	"github.com/Elven9/jarvis-core/internal/metadata"
+	metasqlite "github.com/Elven9/jarvis-core/internal/metadata/sqlitestore"
 	"github.com/Elven9/jarvis-core/internal/session"
 	"github.com/Elven9/jarvis-core/internal/session/sqlitestore"
 	"github.com/Elven9/jarvis-core/internal/sqlite"
@@ -28,13 +33,76 @@ import (
 
 const ndjson = "application/x-ndjson"
 
-var sessionFile = []byte("{\"type\":\"session\",\"id\":\"s1\"}\n{\"type\":\"message\"}\n")
+// piSession is a real session file (the "named" golden file) with sessionID in its header,
+// so it is accepted under that sessionId.
+func piSession(t *testing.T, sessionID string) []byte {
+	t.Helper()
+	return withHeaderID(t, golden(t, "named"), sessionID)
+}
+
+func golden(t *testing.T, name string) []byte {
+	t.Helper()
+	for _, f := range goldens.All() {
+		if f.Name == name {
+			return f.Data
+		}
+	}
+	t.Fatalf("no golden file %q", name)
+	return nil
+}
+
+// withHeaderID returns the session file with its header's id replaced.
+func withHeaderID(t *testing.T, file []byte, sessionID string) []byte {
+	t.Helper()
+	first, rest, _ := bytes.Cut(file, []byte("\n"))
+	var h map[string]any
+	if err := json.Unmarshal(first, &h); err != nil {
+		t.Fatalf("header: %v", err)
+	}
+	h["id"] = sessionID
+	first, err := json.Marshal(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return slices.Concat(first, []byte("\n"), rest)
+}
+
+// firstLines is the start of a session file: its first n lines, a valid session too.
+func firstLines(file []byte, n int) []byte {
+	i := 0
+	for range n {
+		j := bytes.IndexByte(file[i:], '\n')
+		if j < 0 {
+			return file
+		}
+		i += j + 1
+	}
+	return file[:i]
+}
+
+// bigSession is a valid session file of at least size bytes: a header and a chain of
+// padding entries.
+func bigSession(t *testing.T, sessionID string, size int) []byte {
+	t.Helper()
+	header, _, _ := bytes.Cut(piSession(t, sessionID), []byte("\n"))
+	var b bytes.Buffer
+	b.Write(header)
+	b.WriteByte('\n')
+	pad := strings.Repeat("x", 64<<10)
+	parent := "null"
+	for i := 0; b.Len() < size; i++ {
+		fmt.Fprintf(&b, `{"type":"custom","customType":"test.padding","id":"p%d","parentId":%s,"timestamp":"2026-11-16T09:00:00.000Z","data":{"pad":%q}}`+"\n", i, parent, pad)
+		parent = fmt.Sprintf("%q", fmt.Sprintf("p%d", i))
+	}
+	return b.Bytes()
+}
 
 type sessionsEnv struct {
 	app      *fiber.App
 	logs     *logLines
 	blobs    blob.Store
 	sessions session.Store
+	metas    metadata.Store
 	now      time.Time
 }
 
@@ -51,14 +119,15 @@ func newSessionsEnv(t *testing.T) *sessionsEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return newSessionsEnvWith(t, blobs, sqlitestore.New(db))
+	return newSessionsEnvWith(t, blobs, sqlitestore.New(db), metasqlite.New(db))
 }
 
-func newSessionsEnvWith(t *testing.T, blobs blob.Store, sessions session.Store) *sessionsEnv {
+func newSessionsEnvWith(t *testing.T, blobs blob.Store, sessions session.Store, metas metadata.Store) *sessionsEnv {
 	t.Helper()
-	env := &sessionsEnv{logs: &logLines{}, blobs: blobs, sessions: sessions, now: time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)}
-	env.app = New(logging.New(env.logs, slog.LevelDebug))
-	(&Sessions{Blobs: blobs, Sessions: sessions, Now: func() time.Time { return env.now }}).Register(env.app)
+	env := &sessionsEnv{logs: &logLines{}, blobs: blobs, sessions: sessions, metas: metas, now: time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)}
+	logger := logging.New(env.logs, slog.LevelDebug)
+	env.app = New(logger)
+	(&Sessions{Blobs: blobs, Sessions: sessions, Metadata: metas, Logger: logger, Now: func() time.Time { return env.now }}).Register(env.app)
 	return env
 }
 
@@ -159,12 +228,13 @@ func assertShortTextError(t *testing.T, resp *http.Response, body string, status
 
 func TestUploadStoresBodyAndAnswers200WithEmptyBody(t *testing.T) {
 	env := newSessionsEnv(t)
+	sessionFile := piSession(t, "s1")
 	resp, body := env.put(t, "mac-1", "s1", ndjson, sessionFile)
 	assertOK(t, resp, body)
 
 	rec, content := env.stored(t, "mac-1", "s1")
 	if !bytes.Equal(content, sessionFile) {
-		t.Errorf("stored %q, want the uploaded bytes %q", content, sessionFile)
+		t.Errorf("stored %d bytes, want the %d uploaded bytes", len(content), len(sessionFile))
 	}
 	want := blob.Info{Hash: sha256.Sum256(sessionFile), Size: int64(len(sessionFile))}
 	if rec.Blob != want || !rec.FirstUploadedAt.Equal(env.now) || !rec.LastUploadedAt.Equal(env.now) {
@@ -175,9 +245,10 @@ func TestUploadStoresBodyAndAnswers200WithEmptyBody(t *testing.T) {
 func TestUploadOverwritesPreviousContent(t *testing.T) {
 	env := newSessionsEnv(t)
 	first := env.now
-	env.putOK(t, "mac-1", "s1", ndjson, []byte("v1\n"))
+	v1 := piSession(t, "s1")
+	env.putOK(t, "mac-1", "s1", ndjson, firstLines(v1, 4))
 	env.now = env.now.Add(time.Minute)
-	v2 := []byte("v1\nv2\n")
+	v2 := v1
 	env.putOK(t, "mac-1", "s1", ndjson, v2)
 
 	rec, content := env.stored(t, "mac-1", "s1")
@@ -196,6 +267,7 @@ func TestUploadOverwritesPreviousContent(t *testing.T) {
 func TestUploadDecodesPercentEncodedIDs(t *testing.T) {
 	env := newSessionsEnv(t)
 	sessionID := "2026-11-16 a:b%c 中文?#&+"
+	sessionFile := piSession(t, sessionID)
 	resp, body := env.put(t, "Mac.home_1", sessionID, ndjson, sessionFile)
 	assertOK(t, resp, body)
 	if _, content := env.stored(t, "Mac.home_1", sessionID); !bytes.Equal(content, sessionFile) {
@@ -205,17 +277,18 @@ func TestUploadDecodesPercentEncodedIDs(t *testing.T) {
 
 func TestUploadIDsAreCaseSensitive(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.putOK(t, "mac", "S1", ndjson, []byte("upper\n"))
-	env.putOK(t, "mac", "s1", ndjson, []byte("lower\n"))
-	if _, content := env.stored(t, "mac", "S1"); string(content) != "upper\n" {
-		t.Errorf("mac/S1 = %q, want \"upper\\n\"", content)
+	upper, lower := piSession(t, "S1"), piSession(t, "s1")
+	env.putOK(t, "mac", "S1", ndjson, upper)
+	env.putOK(t, "mac", "s1", ndjson, lower)
+	if _, content := env.stored(t, "mac", "S1"); !bytes.Equal(content, upper) {
+		t.Errorf("mac/S1 holds the upload of mac/s1, want its own")
 	}
 }
 
 func TestUploadAcceptsTextContentTypes(t *testing.T) {
 	env := newSessionsEnv(t)
 	for _, ct := range []string{ndjson, "application/x-ndjson; charset=utf-8", "text/plain", "text/plain; charset=utf-8", "Text/Plain", "text/x-jsonl"} {
-		if resp, body := env.put(t, "mac", "s1", ct, sessionFile); resp.StatusCode != http.StatusOK || body != "" {
+		if resp, body := env.put(t, "mac", "s1", ct, piSession(t, "s1")); resp.StatusCode != http.StatusOK || body != "" {
 			t.Errorf("content-type %q: %d %q, want 200 with an empty body", ct, resp.StatusCode, body)
 		}
 	}
@@ -225,7 +298,7 @@ func TestUploadRejectsNonTextContentType(t *testing.T) {
 	env := newSessionsEnv(t)
 	for _, ct := range []string{"", "application/json", "application/octet-stream", "multipart/form-data; boundary=x", "text", ";;"} {
 		t.Run(ct, func(t *testing.T) {
-			resp, body := env.put(t, "mac", "s1", ct, sessionFile)
+			resp, body := env.put(t, "mac", "s1", ct, piSession(t, "s1"))
 			assertShortTextError(t, resp, body, http.StatusUnsupportedMediaType)
 			env.assertNothingStored(t, "mac", "s1")
 		})
@@ -254,7 +327,7 @@ func TestUploadRejectsInvalidIDs(t *testing.T) {
 	}
 	for name, path := range paths {
 		t.Run(name, func(t *testing.T) {
-			resp, body := env.putPath(t, path, ndjson, sessionFile)
+			resp, body := env.putPath(t, path, ndjson, piSession(t, "s1"))
 			assertShortTextError(t, resp, body, http.StatusBadRequest)
 		})
 	}
@@ -264,7 +337,7 @@ func TestUploadOfDotSegmentIDNeverMatchesRoute(t *testing.T) {
 	env := newSessionsEnv(t)
 	// The router removes "." and ".." segments (also encoded) before matching.
 	for _, path := range []string{"/v1/sessions/mac/%2E", "/v1/sessions/mac/%2E%2E", "/v1/sessions/./s1"} {
-		if resp, _ := env.putPath(t, path, ndjson, sessionFile); resp.StatusCode != http.StatusNotFound {
+		if resp, _ := env.putPath(t, path, ndjson, piSession(t, "s1")); resp.StatusCode != http.StatusNotFound {
 			t.Errorf("PUT %s = %d, want 404", path, resp.StatusCode)
 		}
 	}
@@ -272,10 +345,10 @@ func TestUploadOfDotSegmentIDNeverMatchesRoute(t *testing.T) {
 
 func TestUploadTypeDefaultsToPiAndRejectsOthers(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.putPathOK(t, "/v1/sessions/mac/s1?type=pi", ndjson, sessionFile)
+	env.putPathOK(t, "/v1/sessions/mac/s1?type=pi", ndjson, piSession(t, "s1"))
 	for _, query := range []string{"?type=claude", "?type=", "?type=PI", "?type=pi&type=pi"} {
 		t.Run(query, func(t *testing.T) {
-			resp, body := env.putPath(t, "/v1/sessions/mac/s2"+query, ndjson, sessionFile)
+			resp, body := env.putPath(t, "/v1/sessions/mac/s2"+query, ndjson, piSession(t, "s2"))
 			assertShortTextError(t, resp, body, http.StatusBadRequest)
 			env.assertNothingStored(t, "mac", "s2")
 		})
@@ -284,8 +357,7 @@ func TestUploadTypeDefaultsToPiAndRejectsOthers(t *testing.T) {
 
 func TestUploadStreamsBodyLargerThanBodyLimit(t *testing.T) {
 	env := newSessionsEnv(t)
-	content := make([]byte, 10<<20) // over Fiber's 4 MB default body limit
-	_, _ = rand.NewChaCha8([32]byte{7}).Read(content)
+	content := bigSession(t, "big", 10<<20) // over Fiber's 4 MB default body limit
 	env.putOK(t, "mac", "big", ndjson, content)
 	if _, stored := env.stored(t, "mac", "big"); !bytes.Equal(stored, content) {
 		t.Error("stored content differs from the 10 MB upload")
@@ -295,7 +367,7 @@ func TestUploadStreamsBodyLargerThanBodyLimit(t *testing.T) {
 func TestUploadIsOnlyServedUnderV1(t *testing.T) {
 	env := newSessionsEnv(t)
 	for _, path := range []string{"/sessions/mac/s1", "/V1/sessions/mac/s1", "/v1/sessions/mac/s1/"} {
-		if resp, _ := env.putPath(t, path, ndjson, sessionFile); resp.StatusCode != http.StatusNotFound {
+		if resp, _ := env.putPath(t, path, ndjson, piSession(t, "s1")); resp.StatusCode != http.StatusNotFound {
 			t.Errorf("PUT %s = %d, want 404", path, resp.StatusCode)
 		}
 	}
@@ -308,9 +380,9 @@ func TestUploadStoreFailureAnswers500AndRecordsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	env := newSessionsEnvWith(t, failingBlobs{}, sqlitestore.New(db))
+	env := newSessionsEnvWith(t, failingBlobs{}, sqlitestore.New(db), metasqlite.New(db))
 
-	resp, body := env.put(t, "mac", "s1", ndjson, sessionFile)
+	resp, body := env.put(t, "mac", "s1", ndjson, piSession(t, "s1"))
 	assertShortTextError(t, resp, body, http.StatusInternalServerError)
 	if strings.Contains(body, "disk full") {
 		t.Errorf("body %q leaks the internal error", body)
@@ -320,7 +392,7 @@ func TestUploadStoreFailureAnswers500AndRecordsNothing(t *testing.T) {
 
 func TestUploadAccessLogHasSessionIDFields(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.put(t, "mac-1", "s 1", ndjson, sessionFile)
+	env.put(t, "mac-1", "s 1", ndjson, piSession(t, "s 1"))
 	r := onlyRecord(t, env.logs)
 	if r["machine_id"] != "mac-1" || r["session_id"] != "s 1" || r["status"] != 200.0 {
 		t.Errorf("access log = %v, want machine_id, session_id and status 200", r)

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -79,6 +78,7 @@ func assertProblem(t *testing.T, resp *http.Response, body []byte, status int) m
 
 func TestReadReturnsUploadedBytes(t *testing.T) {
 	env := newSessionsEnv(t)
+	sessionFile := piSession(t, "s1")
 	env.putOK(t, "mac-1", "s1", ndjson, sessionFile)
 	resp, body := env.get(t, "mac-1", "s1")
 	assertSession(t, resp, body, sessionFile)
@@ -89,16 +89,16 @@ func TestReadReturnsUploadedBytes(t *testing.T) {
 
 func TestReadReturnsLatestUpload(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.putOK(t, "mac-1", "s1", ndjson, []byte("v1\n"))
-	env.putOK(t, "mac-1", "s1", ndjson, []byte("v1\nv2\n"))
+	v2 := piSession(t, "s1")
+	env.putOK(t, "mac-1", "s1", ndjson, firstLines(v2, 4))
+	env.putOK(t, "mac-1", "s1", ndjson, v2)
 	resp, body := env.get(t, "mac-1", "s1")
-	assertSession(t, resp, body, []byte("v1\nv2\n"))
+	assertSession(t, resp, body, v2)
 }
 
 func TestReadStreamsLargeSession(t *testing.T) {
 	env := newSessionsEnv(t)
-	content := make([]byte, 10<<20)
-	_, _ = rand.NewChaCha8([32]byte{9}).Read(content)
+	content := bigSession(t, "big", 10<<20)
 	env.putOK(t, "mac", "big", ndjson, content)
 	resp, body := env.get(t, "mac", "big")
 	assertSession(t, resp, body, content)
@@ -107,6 +107,7 @@ func TestReadStreamsLargeSession(t *testing.T) {
 func TestReadDecodesPercentEncodedIDs(t *testing.T) {
 	env := newSessionsEnv(t)
 	sessionID := "2026-11-16 a:b%c 中文?#&+"
+	sessionFile := piSession(t, sessionID)
 	env.putOK(t, "Mac.home_1", sessionID, ndjson, sessionFile)
 	resp, body := env.get(t, "Mac.home_1", sessionID)
 	assertSession(t, resp, body, sessionFile)
@@ -114,14 +115,14 @@ func TestReadDecodesPercentEncodedIDs(t *testing.T) {
 
 func TestReadIDsAreCaseSensitive(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.putOK(t, "mac", "s1", ndjson, sessionFile)
+	env.putOK(t, "mac", "s1", ndjson, piSession(t, "s1"))
 	resp, body := env.get(t, "mac", "S1")
 	assertProblem(t, resp, body, http.StatusNotFound)
 }
 
 func TestReadOfUnknownSessionIsNotFoundProblem(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.putOK(t, "mac", "other", ndjson, sessionFile)
+	env.putOK(t, "mac", "other", ndjson, piSession(t, "other"))
 	resp, body := env.get(t, "mac", "s1")
 	p := assertProblem(t, resp, body, http.StatusNotFound)
 	if detail, _ := p["detail"].(string); !strings.Contains(detail, "pi:mac:s1") {
@@ -151,9 +152,9 @@ func TestReadRejectsInvalidIDsWithProblem(t *testing.T) {
 
 func TestReadTypeDefaultsToPiAndRejectsOthers(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.putOK(t, "mac", "s1", ndjson, sessionFile)
+	env.putOK(t, "mac", "s1", ndjson, piSession(t, "s1"))
 	resp, body := env.getPath(t, "/v1/sessions/mac/s1?type=pi")
-	assertSession(t, resp, body, sessionFile)
+	assertSession(t, resp, body, piSession(t, "s1"))
 	for _, query := range []string{"?type=claude", "?type=", "?type=PI", "?type=pi&type=pi"} {
 		resp, body := env.getPath(t, "/v1/sessions/mac/s1"+query)
 		assertProblem(t, resp, body, http.StatusBadRequest)
@@ -161,7 +162,7 @@ func TestReadTypeDefaultsToPiAndRejectsOthers(t *testing.T) {
 }
 
 func TestReadStoreFailureIsInternalProblemWithoutDetails(t *testing.T) {
-	env := newSessionsEnvWith(t, failingBlobs{}, &oneSession{})
+	env := newSessionsEnvWith(t, failingBlobs{}, &oneSession{}, nil)
 	resp, body := env.get(t, "mac", "s1")
 	p := assertProblem(t, resp, body, http.StatusInternalServerError)
 	if _, ok := p["detail"]; ok {
@@ -174,11 +175,11 @@ func TestReadStoreFailureIsInternalProblemWithoutDetails(t *testing.T) {
 
 func TestReadAccessLogHasSessionIDFields(t *testing.T) {
 	env := newSessionsEnv(t)
-	env.putOK(t, "mac-1", "s 1", ndjson, sessionFile)
+	env.putOK(t, "mac-1", "s 1", ndjson, piSession(t, "s 1"))
 	env.logs.Reset()
 	env.get(t, "mac-1", "s 1")
 	r := onlyRecord(t, env.logs)
-	if r["method"] != "GET" || r["machine_id"] != "mac-1" || r["session_id"] != "s 1" || r["status"] != 200.0 || r["size"] != float64(len(sessionFile)) {
+	if r["method"] != "GET" || r["machine_id"] != "mac-1" || r["session_id"] != "s 1" || r["status"] != 200.0 || r["size"] != float64(len(piSession(t, "s 1"))) {
 		t.Errorf("access log = %v, want GET 200 with the ID fields and size", r)
 	}
 }
