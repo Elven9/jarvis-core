@@ -36,6 +36,7 @@ const maxErrorBody = 200
 func (s *Sessions) Register(app *fiber.App) {
 	app.Get("/v1/sessions", s.list)
 	app.Put("/v1/sessions/:machineId/:sessionId", s.upload)
+	app.Get("/v1/sessions/:machineId/:sessionId", s.readParsed)
 	app.Get("/v1/sessions/:machineId/:sessionId/raw", s.readRaw)
 	app.Get("/v1/sessions/:machineId/:sessionId/meta", s.readMeta)
 }

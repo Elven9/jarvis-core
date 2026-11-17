@@ -85,46 +85,52 @@ type metricsJSON struct {
 }
 
 func toMetaJSON(m metadata.Meta) metaJSON {
-	md := m.Metadata
-	out := metaJSON{
-		Metadata: metadataJSON{
-			SessionID:     md.SessionID,
-			CWD:           md.CWD,
-			StartedAt:     md.StartedAt.UTC(),
-			FormatVersion: md.FormatVersion,
-			ParentSession: md.ParentSession,
-			AgentVersion:  md.AgentVersion,
-			Name:          md.Name,
-			Models:        make([]modelJSON, 0, len(md.Models)),
-			Errors:        make([]agentErrJSON, 0, len(md.Errors)),
-		},
-		ParserVersion: m.ParserVersion,
-	}
-	if md.Tags != nil {
-		out.Metadata.Tags = &tagsJSON{Tags: append([]string{}, md.Tags.Tags...), Source: md.Tags.Source, At: md.Tags.At.UTC()}
-	}
-	for _, mc := range md.Models {
-		out.Metadata.Models = append(out.Metadata.Models, modelJSON{Provider: mc.Provider, ModelID: mc.ModelID, At: mc.At.UTC()})
-	}
-	for _, e := range md.Errors {
-		out.Metadata.Errors = append(out.Metadata.Errors, agentErrJSON{Message: e.Message, At: e.At.UTC()})
-	}
-	if mt := m.Metrics; mt != nil {
-		tools := map[string]sessionparser.ToolMetrics{}
-		maps.Copy(tools, mt.Tools)
-		out.Metrics = &metricsJSON{
-			Tokens:             mt.Tokens,
-			CostUSD:            mt.CostUSD,
-			Turns:              mt.Turns,
-			Model:              mt.Model,
-			Tools:              tools,
-			Compactions:        mt.Compactions,
-			ContextPeakPercent: mt.ContextPeakPercent,
-			CacheMisses:        append([]sessionparser.CacheMiss{}, mt.CacheMisses...),
-			Entries:            mt.Entries,
-			EntryID:            mt.EntryID,
-			At:                 mt.At.UTC(),
-		}
+	out := metaJSON{Metadata: toMetadataJSON(m.Metadata), ParserVersion: m.ParserVersion}
+	if m.Metrics != nil {
+		mt := toMetricsJSON(*m.Metrics)
+		out.Metrics = &mt
 	}
 	return out
+}
+
+func toMetadataJSON(md sessionparser.Metadata) metadataJSON {
+	out := metadataJSON{
+		SessionID:     md.SessionID,
+		CWD:           md.CWD,
+		StartedAt:     md.StartedAt.UTC(),
+		FormatVersion: md.FormatVersion,
+		ParentSession: md.ParentSession,
+		AgentVersion:  md.AgentVersion,
+		Name:          md.Name,
+		Models:        make([]modelJSON, 0, len(md.Models)),
+		Errors:        make([]agentErrJSON, 0, len(md.Errors)),
+	}
+	if md.Tags != nil {
+		out.Tags = &tagsJSON{Tags: append([]string{}, md.Tags.Tags...), Source: md.Tags.Source, At: md.Tags.At.UTC()}
+	}
+	for _, mc := range md.Models {
+		out.Models = append(out.Models, modelJSON{Provider: mc.Provider, ModelID: mc.ModelID, At: mc.At.UTC()})
+	}
+	for _, e := range md.Errors {
+		out.Errors = append(out.Errors, agentErrJSON{Message: e.Message, At: e.At.UTC()})
+	}
+	return out
+}
+
+func toMetricsJSON(mt sessionparser.Metrics) metricsJSON {
+	tools := map[string]sessionparser.ToolMetrics{}
+	maps.Copy(tools, mt.Tools)
+	return metricsJSON{
+		Tokens:             mt.Tokens,
+		CostUSD:            mt.CostUSD,
+		Turns:              mt.Turns,
+		Model:              mt.Model,
+		Tools:              tools,
+		Compactions:        mt.Compactions,
+		ContextPeakPercent: mt.ContextPeakPercent,
+		CacheMisses:        append([]sessionparser.CacheMiss{}, mt.CacheMisses...),
+		Entries:            mt.Entries,
+		EntryID:            mt.EntryID,
+		At:                 mt.At.UTC(),
+	}
 }

@@ -42,25 +42,91 @@ var ParserVersion = sync.OnceValue(func() string {
 // metadata or metrics are invalid, or its header ID differs from id.SessionID; any other
 // error is a read error.
 func Parse(r io.Reader, id session.ID) (Meta, error) {
-	s, err := sessionparser.Parse(r)
+	s, err := parseSession(r, id)
 	if err != nil {
-		if isReadError(err) {
-			return Meta{}, fmt.Errorf("read session: %w", err)
-		}
-		return Meta{}, fmt.Errorf("%w: %w", ErrInvalidSession, err)
-	}
-	if s.Header.ID != id.SessionID {
-		return Meta{}, fmt.Errorf("%w: header id %q differs from sessionId %q", ErrInvalidSession, s.Header.ID, id.SessionID)
+		return Meta{}, err
 	}
 	md, err := s.Metadata()
 	if err != nil {
-		return Meta{}, fmt.Errorf("%w: metadata: %w", ErrInvalidSession, err)
+		return Meta{}, invalid("metadata", err)
 	}
 	metrics, err := s.Metrics()
 	if err != nil {
-		return Meta{}, fmt.Errorf("%w: metrics: %w", ErrInvalidSession, err)
+		return Meta{}, invalid("metrics", err)
 	}
 	return Meta{ID: id, Metadata: *md, Metrics: metrics, ParserVersion: ParserVersion()}, nil
+}
+
+// Parsed is every group the session parser reads from a session file.
+type Parsed struct {
+	ID       session.ID
+	Metadata sessionparser.Metadata
+	// Metrics are the totals and samples; nil when the session has no pi-agent.metrics entry.
+	Metrics             *sessionparser.Metrics
+	ToolCalls           []sessionparser.ToolCall
+	Subagents           []sessionparser.Subagent
+	Skills              sessionparser.Skills
+	ProjectInstructions sessionparser.ProjectInstructions
+	// ParserVersion is the version of the session-parser module that produced the groups.
+	ParserVersion string
+}
+
+// ParseAll reads the session file r of the session id with every parser group. It fails
+// like Parse, and with an error wrapping ErrInvalidSession when any group is invalid.
+func ParseAll(r io.Reader, id session.ID) (Parsed, error) {
+	s, err := parseSession(r, id)
+	if err != nil {
+		return Parsed{}, err
+	}
+	p := Parsed{ID: id, ParserVersion: ParserVersion()}
+	md, err := s.Metadata()
+	if err != nil {
+		return Parsed{}, invalid("metadata", err)
+	}
+	p.Metadata = *md
+	if p.Metrics, err = s.Metrics(); err != nil {
+		return Parsed{}, invalid("metrics", err)
+	}
+	if p.ToolCalls, err = s.ToolCalls(); err != nil {
+		return Parsed{}, invalid("tool calls", err)
+	}
+	if p.Subagents, err = s.Subagents(); err != nil {
+		return Parsed{}, invalid("subagents", err)
+	}
+	skills, err := s.Skills()
+	if err != nil {
+		return Parsed{}, invalid("skills", err)
+	}
+	if skills != nil {
+		p.Skills = *skills
+	}
+	pi, err := s.ProjectInstructions()
+	if err != nil {
+		return Parsed{}, invalid("project instructions", err)
+	}
+	if pi != nil {
+		p.ProjectInstructions = *pi
+	}
+	return p, nil
+}
+
+// parseSession parses r and checks its header ID against id.
+func parseSession(r io.Reader, id session.ID) (*sessionparser.Session, error) {
+	s, err := sessionparser.Parse(r)
+	if err != nil {
+		if isReadError(err) {
+			return nil, fmt.Errorf("read session: %w", err)
+		}
+		return nil, fmt.Errorf("%w: %w", ErrInvalidSession, err)
+	}
+	if s.Header.ID != id.SessionID {
+		return nil, fmt.Errorf("%w: header id %q differs from sessionId %q", ErrInvalidSession, s.Header.ID, id.SessionID)
+	}
+	return s, nil
+}
+
+func invalid(group string, err error) error {
+	return fmt.Errorf("%w: %s: %w", ErrInvalidSession, group, err)
 }
 
 // isReadError tells a failure to read the file from a file the parser rejects.

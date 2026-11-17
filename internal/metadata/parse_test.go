@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 	"testing/iotest"
+
+	sessionparser "github.com/Elven9/pi-agent/go/pkg/session-parser"
 
 	"github.com/Elven9/jarvis-core/internal/goldens"
 	"github.com/Elven9/jarvis-core/internal/metadata"
@@ -71,6 +74,64 @@ func TestParseReadFailureIsNotInvalidSession(t *testing.T) {
 		t.Errorf("Parse: got %v, want a read error that is not ErrInvalidSession", err)
 	}
 }
+
+func TestParseAllReturnsEveryGroupOfEveryGoldenFile(t *testing.T) {
+	for _, f := range goldens.All() {
+		t.Run(f.Name, func(t *testing.T) {
+			sid := goldenID(t, f.Data)
+			got, err := metadata.ParseAll(bytes.NewReader(f.Data), id(t, sid))
+			if err != nil {
+				t.Fatalf("ParseAll: %v", err)
+			}
+			s, err := sessionparser.Parse(bytes.NewReader(f.Data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			md, _ := s.Metadata()
+			metrics, _ := s.Metrics()
+			calls, _ := s.ToolCalls()
+			subagents, _ := s.Subagents()
+			skills, _ := s.Skills()
+			instructions, _ := s.ProjectInstructions()
+			want := metadata.Parsed{
+				ID: id(t, sid), Metadata: *md, Metrics: metrics, ToolCalls: calls, Subagents: subagents,
+				Skills: *skills, ProjectInstructions: *instructions, ParserVersion: metadata.ParserVersion(),
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("ParseAll differs from what the parser's groups return")
+			}
+		})
+	}
+}
+
+func TestParseAllRejectsSessionsWithAnInvalidGroup(t *testing.T) {
+	cases := map[string]string{
+		"not JSON":            "hello\n",
+		"header ID differs":   strings.Replace(header, `"id":"s1"`, `"id":"s2"`, 1),
+		"unknown scenario":    header + custom("pi-agent.scenario", `{"version":99,"name":"demo"}`),
+		"unknown metrics":     header + custom("pi-agent.metrics", `{"version":99}`),
+		"result without call": header + orphanResult,
+	}
+	for name, file := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := metadata.ParseAll(strings.NewReader(file), id(t, "s1"))
+			if !errors.Is(err, metadata.ErrInvalidSession) {
+				t.Errorf("ParseAll: got %v, want ErrInvalidSession", err)
+			}
+		})
+	}
+}
+
+func TestParseAllReadFailureIsNotInvalidSession(t *testing.T) {
+	_, err := metadata.ParseAll(iotest.ErrReader(errors.New("disk gone")), id(t, "s1"))
+	if err == nil || errors.Is(err, metadata.ErrInvalidSession) {
+		t.Errorf("ParseAll: got %v, want a read error that is not ErrInvalidSession", err)
+	}
+}
+
+// orphanResult is a tool result whose call is not on the branch: Metadata and Metrics accept
+// it, ToolCalls does not.
+const orphanResult = `{"type":"message","id":"e1","parentId":null,"timestamp":"2026-11-16T09:00:01.000Z","message":{"role":"toolResult","toolCallId":"c1","toolName":"read","content":[],"isError":false}}` + "\n"
 
 func TestParserVersionIsTheLibraryVersionInGoMod(t *testing.T) {
 	gomod, err := os.ReadFile("../../go.mod")
