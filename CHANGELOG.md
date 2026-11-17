@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0](https://github.com/Elven9/jarvis-core/compare/v0.2.1...v0.3.0) (2026-11-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **server:** uploads whose tool calls, subagents, skills or project instructions do not parse are now rejected with 422.
+* **server:** GET /v1/sessions/{machineId}/{sessionId} no longer answers the raw session file; download it from .../raw instead.
+
+### Features
+
+* **metadata:** list the scenario and project name of each session ([7551f92](https://github.com/Elven9/jarvis-core/commit/7551f92ebfc2cfba0f9d375b31eaa3cccec4e6d5))
+* **metadata:** store the session scenario and project ([61b8dda](https://github.com/Elven9/jarvis-core/commit/61b8ddaec0b1843304383c9007141991d8b5da26))
+* **server:** answer GET /v1/sessions/{machineId}/{sessionId} with the parsed session ([bb47448](https://github.com/Elven9/jarvis-core/commit/bb47448dc4fcbc168fd88c2f34a8655771c72509))
+* **server:** answer the stored scenario and project on the meta route ([f2b95c9](https://github.com/Elven9/jarvis-core/commit/f2b95c99881981305391b2f313f16247eba248aa))
+* **server:** list the scenario and project of each session ([09535d9](https://github.com/Elven9/jarvis-core/commit/09535d95ac5d6271b35c65a53ced20ad21efc55d))
+* **server:** move the raw session download to GET /v1/sessions/{machineId}/{sessionId}/raw ([eb13c3d](https://github.com/Elven9/jarvis-core/commit/eb13c3dc379c2669db9b747d4ece2e7988745a86))
+* **server:** reject uploads that any parser group rejects ([087a09d](https://github.com/Elven9/jarvis-core/commit/087a09d2cf8602122c799ddb80ba3c67c24cc9bb))
+
+
+### Bug Fixes
+
+* **deps:** bump session-parser to go/v0.2.0 ([c2bac4c](https://github.com/Elven9/jarvis-core/commit/c2bac4c1fd37a20472d208877fc23e50acdc694b))
+
 ## [0.2.1](https://github.com/Elven9/jarvis-core/compare/v0.2.0...v0.2.1) (2026-11-17)
 
 
