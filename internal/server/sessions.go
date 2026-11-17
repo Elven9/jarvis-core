@@ -70,7 +70,8 @@ func (s *Sessions) readRaw(c fiber.Ctx) error {
 // parsed metadata. Write sequence, without a transaction across the steps:
 //
 //  1. store the blob;
-//  2. parse the stored blob and check its header ID (422 when rejected);
+//  2. parse the stored blob with every parser group and check its header ID (422 when
+//     any group rejects it);
 //  3. record the upload (session record and upload history);
 //  4. replace the session's metadata.
 //

@@ -57,6 +57,8 @@ func TestParseRejectsInvalidSessions(t *testing.T) {
 		"unknown tags":           header + custom("pi-agent.tags", `{"version":99,"tags":["a"],"source":"flag"}`),
 		"header ID differs":      strings.Replace(header, `"id":"s1"`, `"id":"s2"`, 1),
 		"header ID differs case": strings.Replace(header, `"id":"s1"`, `"id":"S1"`, 1),
+		"invalid tool calls":     header + orphanResult,
+		"unknown project":        header + custom("pi-agent.project", `{"version":99,"name":"p"}`),
 	}
 	for name, file := range cases {
 		t.Run(name, func(t *testing.T) {

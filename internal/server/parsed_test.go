@@ -235,10 +235,18 @@ func TestReadParsedAnswersAbsentPartsAsNullAndEmptyLists(t *testing.T) {
 
 func TestReadParsedOfStoredSessionTheParserRejectsIs422Problem(t *testing.T) {
 	env := newSessionsEnv(t)
-	// The upload checks metadata and metrics only, so it accepts a result without its call.
-	file := firstLines(piSession(t, "s1"), 1)
-	file = append(file, `{"type":"message","id":"zz1","parentId":null,"timestamp":"2026-11-16T09:00:01.000Z","message":{"role":"toolResult","toolCallId":"c1","toolName":"read","content":[],"isError":false}}`+"\n"...)
-	env.putOK(t, "mac", "s1", ndjson, file)
+	// Uploads reject such a file, so store it directly, as a file an older parser accepted.
+	info, err := env.blobs.Put(t.Context(), strings.NewReader(validHeader+orphanToolResult))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := session.NewID(session.TypePi, "mac", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.sessions.RecordUpload(t.Context(), session.Upload{ID: id, Blob: info, UploadedAt: env.now}); err != nil {
+		t.Fatal(err)
+	}
 
 	resp, body := env.getParsed(t, "mac", "s1")
 	p := assertProblem(t, resp, body, http.StatusUnprocessableEntity)

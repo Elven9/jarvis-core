@@ -78,6 +78,10 @@ func TestUploadStoresParsedMetadataOfEveryGoldenFile(t *testing.T) {
 	}
 }
 
+// orphanToolResult is a tool result whose call is not on the branch: metadata and metrics
+// accept it, the tool calls group does not.
+const orphanToolResult = `{"type":"message","id":"e1","parentId":null,"timestamp":"2026-11-16T09:00:01.000Z","message":{"role":"toolResult","toolCallId":"c1","toolName":"read","content":[],"isError":false}}` + "\n"
+
 func sameProject(a, b *sessionparser.Project) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -104,6 +108,8 @@ func TestUploadRejectsInvalidSessionWith422AndChangesNoRecord(t *testing.T) {
 		"invalid entry line":   validHeader + `{"type":"message","parentId":null}` + "\n",
 		"invalid metadata":     validHeader + customEntry("pi-agent.tags", `{"version":99,"tags":["a"],"source":"flag"}`),
 		"invalid metrics":      validHeader + customEntry("pi-agent.metrics", `{"version":99}`),
+		"invalid scenario":     validHeader + customEntry("pi-agent.scenario", `{"version":99,"name":"demo"}`),
+		"invalid tool calls":   validHeader + orphanToolResult,
 		"header ID differs":    strings.Replace(validHeader, `"id":"s1"`, `"id":"s2"`, 1),
 		"header ID long":       strings.Replace(validHeader, `"id":"s1"`, `"id":"`+strings.Repeat("é", 300)+`"`, 1),
 		"header ID other case": strings.Replace(validHeader, `"id":"s1"`, `"id":"S1"`, 1),

@@ -37,24 +37,16 @@ var ParserVersion = sync.OnceValue(func() string {
 	return "unknown"
 })
 
-// Parse reads the session file r of the session id and returns its metadata.
-// It fails with an error wrapping ErrInvalidSession when the file does not parse, its
-// metadata or metrics are invalid, or its header ID differs from id.SessionID; any other
-// error is a read error.
+// Parse reads the session file r of the session id and returns its metadata. It is strict:
+// every parser group must accept the file (see ParseAll), not only the stored ones.
+// It fails with an error wrapping ErrInvalidSession when the file does not parse, any group
+// rejects it, or its header ID differs from id.SessionID; any other error is a read error.
 func Parse(r io.Reader, id session.ID) (Meta, error) {
-	s, err := parseSession(r, id)
+	p, err := ParseAll(r, id)
 	if err != nil {
 		return Meta{}, err
 	}
-	md, err := s.Metadata()
-	if err != nil {
-		return Meta{}, invalid("metadata", err)
-	}
-	metrics, err := s.Metrics()
-	if err != nil {
-		return Meta{}, invalid("metrics", err)
-	}
-	return Meta{ID: id, Metadata: *md, Metrics: metrics, ParserVersion: ParserVersion()}, nil
+	return Meta{ID: id, Metadata: p.Metadata, Metrics: p.Metrics, ParserVersion: p.ParserVersion}, nil
 }
 
 // Parsed is every group the session parser reads from a session file.
