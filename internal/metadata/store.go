@@ -55,6 +55,9 @@ type Summary struct {
 	UploadedAt   time.Time
 	Name         *string
 	AgentVersion *string
+	Scenario     *string
+	// Project is the project's name; nil without a project.
+	Project *string
 	// Tags are nil without a tags entry, and empty (not nil) when cleared.
 	Tags []string
 	// Metrics are nil when the session has none.

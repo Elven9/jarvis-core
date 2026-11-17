@@ -63,7 +63,10 @@ func (m *memStore) List(ctx context.Context) ([]metadata.Summary, error) {
 		if err != nil {
 			return nil, err
 		}
-		sm := metadata.Summary{ID: id, UploadedAt: rec.LastUploadedAt, Name: meta.Metadata.Name, AgentVersion: meta.Metadata.AgentVersion}
+		sm := metadata.Summary{ID: id, UploadedAt: rec.LastUploadedAt, Name: meta.Metadata.Name, AgentVersion: meta.Metadata.AgentVersion, Scenario: meta.Metadata.Scenario}
+		if p := meta.Metadata.Project; p != nil {
+			sm.Project = &p.Name
+		}
 		if meta.Metadata.Tags != nil {
 			sm.Tags = append([]string{}, meta.Metadata.Tags.Tags...)
 		}

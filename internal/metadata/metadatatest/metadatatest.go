@@ -267,7 +267,10 @@ func testListShowsLatestUploadAndMetadata(t *testing.T, s Stores) {
 
 // summaryOf is the list row of a session uploaded at with metadata m.
 func summaryOf(m metadata.Meta, at time.Time) metadata.Summary {
-	sm := metadata.Summary{ID: m.ID, UploadedAt: at, Name: m.Metadata.Name, AgentVersion: m.Metadata.AgentVersion}
+	sm := metadata.Summary{ID: m.ID, UploadedAt: at, Name: m.Metadata.Name, AgentVersion: m.Metadata.AgentVersion, Scenario: m.Metadata.Scenario}
+	if p := m.Metadata.Project; p != nil {
+		sm.Project = &p.Name
+	}
 	if m.Metadata.Tags != nil {
 		sm.Tags = append([]string{}, m.Metadata.Tags.Tags...)
 	}

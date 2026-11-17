@@ -339,12 +339,13 @@ func getMetrics(ctx context.Context, q querier, k []any) (*sessionparser.Metrics
 }
 
 // List reads every session's summary in one query: its metadata joined with its session
-// record (the upload time), its metrics totals and its tags (as a JSON array in position order).
+// record (the upload time), its project, its metrics totals and its tags (as a JSON array in
+// position order).
 func (s *Store) List(ctx context.Context) ([]metadata.Summary, error) {
 	out := []metadata.Summary{}
 	err := queryEach(ctx, s.db, `
 		SELECT m.type, m.machine_id, m.session_id, s.last_uploaded_at, m.name, m.agent_version,
-			m.tags_source IS NOT NULL,
+			m.scenario, p.name, m.tags_source IS NOT NULL,
 			(SELECT json_group_array(tag) FROM (
 				SELECT tag FROM session_tags t
 				WHERE t.type = m.type AND t.machine_id = m.machine_id AND t.session_id = m.session_id
@@ -356,6 +357,7 @@ func (s *Store) List(ctx context.Context) ([]metadata.Summary, error) {
 		FROM session_metadata m
 		JOIN sessions s USING (type, machine_id, session_id)
 		LEFT JOIN session_metrics mt USING (type, machine_id, session_id)
+		LEFT JOIN session_projects p USING (type, machine_id, session_id)
 		ORDER BY s.last_uploaded_at DESC, m.type, m.machine_id, m.session_id`, nil,
 		func(rows *sql.Rows) error {
 			var (
@@ -367,7 +369,7 @@ func (s *Store) List(ctx context.Context) ([]metadata.Summary, error) {
 				ms                  metadata.MetricsSummary
 			)
 			if err := rows.Scan(&typ, &sm.ID.MachineID, &sm.ID.SessionID, &at, &sm.Name, &sm.AgentVersion,
-				&hasTags, &tags, &hasMetrics,
+				&sm.Scenario, &sm.Project, &hasTags, &tags, &hasMetrics,
 				&ms.Tokens.Input, &ms.Tokens.Output, &ms.Tokens.CacheRead, &ms.Tokens.CacheWrite,
 				&ms.CostUSD, &ms.Turns); err != nil {
 				return err
