@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"crypto/sha256"
 	"database/sql"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	sessionparser "github.com/Elven9/pi-agent/go/pkg/session-parser"
+	"github.com/pressly/goose/v3"
 
 	"github.com/Elven9/jarvis-core/internal/blob"
 	"github.com/Elven9/jarvis-core/internal/metadata"
@@ -17,6 +19,7 @@ import (
 	"github.com/Elven9/jarvis-core/internal/session"
 	sessionsqlite "github.com/Elven9/jarvis-core/internal/session/sqlitestore"
 	"github.com/Elven9/jarvis-core/internal/sqlite"
+	"github.com/Elven9/jarvis-core/migrations"
 )
 
 func openDB(t *testing.T, path string) *sql.DB {
@@ -94,9 +97,10 @@ func TestReplaceLeavesNoRowsOfThePreviousMeta(t *testing.T) {
 		ID: id,
 		Metadata: sessionparser.Metadata{
 			SessionID: "s1", CWD: "/tmp", StartedAt: at, FormatVersion: 3,
-			Tags:   &sessionparser.Tags{Tags: []string{"a", "b"}, Source: "flag", At: at},
-			Models: []sessionparser.ModelChange{{Provider: "p", ModelID: "m", At: at}},
-			Errors: []sessionparser.AgentError{{Message: "x", At: at}},
+			Tags:    &sessionparser.Tags{Tags: []string{"a", "b"}, Source: "flag", At: at},
+			Models:  []sessionparser.ModelChange{{Provider: "p", ModelID: "m", At: at}},
+			Errors:  []sessionparser.AgentError{{Message: "x", At: at}},
+			Project: &sessionparser.Project{Name: "p", At: at, Source: sessionparser.ProjectSource{Kind: sessionparser.ProjectLocal, Dir: "/p"}},
 		},
 		Metrics: &sessionparser.Metrics{
 			Tools:       map[string]sessionparser.ToolMetrics{"bash": {Calls: 1}},
@@ -112,10 +116,47 @@ func TestReplaceLeavesNoRowsOfThePreviousMeta(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, table := range []string{"session_tags", "session_models", "session_errors", "session_metrics", "session_tool_metrics", "session_cache_misses"} {
+	for _, table := range []string{"session_tags", "session_projects", "session_models", "session_errors", "session_metrics", "session_tool_metrics", "session_cache_misses"} {
 		var n int
 		if err := db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil || n != 0 {
 			t.Errorf("%s has %d rows (%v), want 0 after replacing with metadata without them", table, n, err)
 		}
+	}
+}
+
+func TestMetadataStoredBeforeScenarioAndProjectHasNeither(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jarvis.db")
+	old, err := sql.Open("sqlite3", "file:"+path+"?_foreign_keys=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, old, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(t.Context(), 2); err != nil {
+		t.Fatalf("migrate to the v0.2 schema: %v", err)
+	}
+	for _, q := range []string{
+		`INSERT INTO sessions VALUES ('pi', 'mac', 's1', '` + fmt.Sprintf("%064x", 0) + `', 1, 0, 0)`,
+		`INSERT INTO session_metadata (type, machine_id, session_id, parser_version, header_session_id, cwd,
+			started_at, format_version) VALUES ('pi', 'mac', 's1', 'v0.1.1', 's1', '/w', 0, 3)`,
+	} {
+		if _, err := old.Exec(q); err != nil {
+			t.Fatalf("store v0.2 rows: %v", err)
+		}
+	}
+	_ = old.Close()
+
+	id, err := session.NewID(session.TypePi, "mac", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := New(openDB(t, path)).Get(t.Context(), id)
+	if err != nil {
+		t.Fatalf("Get after migrating: %v", err)
+	}
+	if got.Metadata.Scenario != nil || got.Metadata.Project != nil || got.Metadata.CWD != "/w" || got.ParserVersion != "v0.1.1" {
+		t.Errorf("Get = %+v, want the stored metadata with no scenario and no project", got.Metadata)
 	}
 }

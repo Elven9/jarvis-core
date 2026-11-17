@@ -16,7 +16,7 @@ import (
 )
 
 // Store keeps session metadata in the session_metadata table and its child tables
-// (tags, models, errors, metrics, tool metrics, cache misses).
+// (tags, project, models, errors, metrics, tool metrics, cache misses).
 // Times are stored as unix milliseconds.
 type Store struct {
 	db *sql.DB
@@ -81,11 +81,22 @@ func replace(ctx context.Context, tx execer, m metadata.Meta) error {
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO session_metadata (type, machine_id, session_id, parser_version, header_session_id, cwd,
-			started_at, format_version, parent_session, agent_version, name, tags_source, tags_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			started_at, format_version, parent_session, agent_version, name, tags_source, tags_at, scenario)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		append(k, m.ParserVersion, md.SessionID, md.CWD, md.StartedAt.UnixMilli(), md.FormatVersion,
-			md.ParentSession, md.AgentVersion, md.Name, tagsSource, tagsAt)...); err != nil {
+			md.ParentSession, md.AgentVersion, md.Name, tagsSource, tagsAt, md.Scenario)...); err != nil {
 		return fmt.Errorf("insert metadata: %w", err)
+	}
+	if p := md.Project; p != nil {
+		src := p.Source
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO session_projects (type, machine_id, session_id, name, source_kind, source_dir,
+				source_provider, source_repo, source_path, source_tag, source_commit, at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			append(k, p.Name, src.Kind, src.Dir, src.Provider, src.Repo, src.Path, src.Tag, src.Commit,
+				p.At.UnixMilli())...); err != nil {
+			return fmt.Errorf("insert project: %w", err)
+		}
 	}
 	if md.Tags != nil {
 		for i, tag := range md.Tags.Tags {
@@ -181,10 +192,10 @@ func get(ctx context.Context, q querier, id session.ID) (metadata.Meta, error) {
 	)
 	err := q.QueryRowContext(ctx, `
 		SELECT parser_version, header_session_id, cwd, started_at, format_version,
-			parent_session, agent_version, name, tags_source, tags_at
+			parent_session, agent_version, name, tags_source, tags_at, scenario
 		FROM session_metadata WHERE type = ? AND machine_id = ? AND session_id = ?`, k...).
 		Scan(&m.ParserVersion, &md.SessionID, &md.CWD, &startedAt, &md.FormatVersion,
-			&md.ParentSession, &md.AgentVersion, &md.Name, &tagsSource, &tagsAt)
+			&md.ParentSession, &md.AgentVersion, &md.Name, &tagsSource, &tagsAt, &md.Scenario)
 	if errors.Is(err, sql.ErrNoRows) {
 		return metadata.Meta{}, metadata.ErrNotFound
 	}
@@ -208,6 +219,9 @@ func get(ctx context.Context, q querier, id session.ID) (metadata.Meta, error) {
 		if err != nil {
 			return metadata.Meta{}, fmt.Errorf("tags: %w", err)
 		}
+	}
+	if md.Project, err = getProject(ctx, q, k); err != nil {
+		return metadata.Meta{}, fmt.Errorf("project: %w", err)
 	}
 	err = queryEach(ctx, q, `SELECT provider, model_id, at FROM session_models
 		WHERE type = ? AND machine_id = ? AND session_id = ? ORDER BY position`, k,
@@ -244,6 +258,28 @@ func get(ctx context.Context, q querier, id session.ID) (metadata.Meta, error) {
 		return metadata.Meta{}, fmt.Errorf("metrics: %w", err)
 	}
 	return m, nil
+}
+
+// getProject returns nil when the session has no project row.
+func getProject(ctx context.Context, q querier, k []any) (*sessionparser.Project, error) {
+	var (
+		p  sessionparser.Project
+		at int64
+	)
+	err := q.QueryRowContext(ctx, `
+		SELECT name, source_kind, source_dir, source_provider, source_repo, source_path, source_tag,
+			source_commit, at
+		FROM session_projects WHERE type = ? AND machine_id = ? AND session_id = ?`, k...).
+		Scan(&p.Name, &p.Source.Kind, &p.Source.Dir, &p.Source.Provider, &p.Source.Repo, &p.Source.Path,
+			&p.Source.Tag, &p.Source.Commit, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.At = fromMilli(at)
+	return &p, nil
 }
 
 // getMetrics returns nil when the session has no metrics row.

@@ -41,6 +41,7 @@ func Run(t *testing.T, newStores func(t *testing.T) Stores) {
 		{"ReplaceStoresEveryField", testReplaceStoresEveryField},
 		{"MissingPartsStayMissing", testMissingPartsStayMissing},
 		{"ClearedTagsStayCleared", testClearedTagsStayCleared},
+		{"LocalProjectRoundTrips", testLocalProjectRoundTrips},
 		{"SamplesAreNotStored", testSamplesAreNotStored},
 		{"ReplaceLeavesNothingOfThePreviousMeta", testReplaceLeavesNothingOfThePreviousMeta},
 		{"SessionsWithDifferentIDsAreSeparate", testSessionsWithDifferentIDsAreSeparate},
@@ -105,6 +106,13 @@ func testClearedTagsStayCleared(t *testing.T, s Stores) {
 		t.Errorf("Tags = %+v, want a cleared tag list (not nil)", got.Metadata.Tags)
 	}
 	assertMeta(t, got, m)
+}
+
+func testLocalProjectRoundTrips(t *testing.T, s Stores) {
+	m := minimal(t, "mac", "s1")
+	m.Metadata.Project = &sessionparser.Project{Name: "p", At: t0, Source: sessionparser.ProjectSource{Kind: sessionparser.ProjectLocal, Dir: "/Users/me/p"}}
+	mustReplace(t, s, m)
+	assertMeta(t, mustGet(t, s, m.ID), m)
 }
 
 func testSamplesAreNotStored(t *testing.T, s Stores) {
@@ -325,6 +333,10 @@ func full(t *testing.T, machineID, sessionID string) metadata.Meta {
 			AgentVersion:  ptr("0.12.0"),
 			Tags:          &sessionparser.Tags{Tags: []string{"b", "a", "中文"}, Source: "flag", At: t0.Add(time.Second)},
 			Name:          ptr("design review"),
+			Scenario:      ptr("code-writer"),
+			Project: &sessionparser.Project{Name: "jarvis", At: t0.Add(1500 * time.Millisecond), Source: sessionparser.ProjectSource{
+				Kind: sessionparser.ProjectRemote, Provider: "github", Repo: "me/jarvis", Path: "", Tag: "v1.0.0", Commit: "abc123",
+			}},
 			Models: []sessionparser.ModelChange{
 				{Provider: "anthropic", ModelID: "claude-a", At: t0.Add(2 * time.Second)},
 				{Provider: "openai", ModelID: "gpt-b", At: t0.Add(3 * time.Second)},
@@ -435,6 +447,11 @@ func normalize(m metadata.Meta) metadata.Meta {
 		tags.Tags = emptyToNil(slices.Clone(tags.Tags))
 		tags.At = tags.At.UTC()
 		md.Tags = &tags
+	}
+	if md.Project != nil {
+		p := *md.Project
+		p.At = p.At.UTC()
+		md.Project = &p
 	}
 	md.Models = emptyToNil(slices.Clone(md.Models))
 	for i := range md.Models {
