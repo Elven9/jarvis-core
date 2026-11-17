@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/Elven9/jarvis-core/compare/v0.2.0...v0.2.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **deps:** bump session-parser to go/v0.1.1 ([3c618e0](https://github.com/Elven9/jarvis-core/commit/3c618e09505d1e76cec58082599558a85ab96a22))
+
 ## [0.2.0](https://github.com/Elven9/jarvis-core/compare/v0.1.0...v0.2.0) (2026-11-16)
 
 
