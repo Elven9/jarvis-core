@@ -52,38 +52,13 @@ func (s *Sessions) readParsed(c fiber.Ctx) error {
 // parsedJSON is the body of the parsed session route. Absent values are null; lists and
 // maps are never null. JSON values the session holds (tool arguments, details) are as written.
 type parsedJSON struct {
-	Metadata            parsedMetadataJSON      `json:"metadata"`
+	Metadata            metadataJSON            `json:"metadata"`
 	Metrics             *parsedMetricsJSON      `json:"metrics"` // null for a session without metrics
 	ToolCalls           []toolCallJSON          `json:"toolCalls"`
 	Subagents           []subagentJSON          `json:"subagents"`
 	Skills              skillsJSON              `json:"skills"`
 	ProjectInstructions projectInstructionsJSON `json:"projectInstructions"`
 	ParserVersion       string                  `json:"parserVersion"`
-}
-
-// parsedMetadataJSON is the meta route's metadata plus the fields it does not store.
-type parsedMetadataJSON struct {
-	metadataJSON
-	Scenario *string      `json:"scenario"`
-	Project  *projectJSON `json:"project"`
-}
-
-type projectJSON struct {
-	Name   string            `json:"name"`
-	Source projectSourceJSON `json:"source"`
-	At     time.Time         `json:"at"`
-}
-
-// projectSourceJSON has dir for a local project, the other fields for a remote one; the
-// fields of the other kind are null.
-type projectSourceJSON struct {
-	Kind     string  `json:"kind"`
-	Dir      *string `json:"dir"`
-	Provider *string `json:"provider"`
-	Repo     *string `json:"repo"`
-	Path     *string `json:"path"`
-	Tag      *string `json:"tag"`
-	Commit   *string `json:"commit"`
 }
 
 // parsedMetricsJSON are the meta route's metrics plus the raw samples.
@@ -212,11 +187,7 @@ type instructionReadJSON struct {
 
 func toParsedJSON(p metadata.Parsed) parsedJSON {
 	out := parsedJSON{
-		Metadata: parsedMetadataJSON{
-			metadataJSON: toMetadataJSON(p.Metadata),
-			Scenario:     p.Metadata.Scenario,
-			Project:      toProjectJSON(p.Metadata.Project),
-		},
+		Metadata:            toMetadataJSON(p.Metadata),
 		ToolCalls:           make([]toolCallJSON, 0, len(p.ToolCalls)),
 		Subagents:           make([]subagentJSON, 0, len(p.Subagents)),
 		Skills:              toSkillsJSON(p.Skills),
@@ -244,19 +215,6 @@ func toParsedJSON(p metadata.Parsed) parsedJSON {
 		out.Subagents = append(out.Subagents, toSubagentJSON(sa))
 	}
 	return out
-}
-
-func toProjectJSON(p *sessionparser.Project) *projectJSON {
-	if p == nil {
-		return nil
-	}
-	src := projectSourceJSON{Kind: p.Source.Kind}
-	if p.Source.Kind == sessionparser.ProjectLocal {
-		src.Dir = &p.Source.Dir
-	} else {
-		src.Provider, src.Repo, src.Path, src.Tag, src.Commit = &p.Source.Provider, &p.Source.Repo, &p.Source.Path, &p.Source.Tag, &p.Source.Commit
-	}
-	return &projectJSON{Name: p.Name, Source: src, At: p.At.UTC()}
 }
 
 func toToolCallJSON(c sessionparser.ToolCall) toolCallJSON {

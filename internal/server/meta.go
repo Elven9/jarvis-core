@@ -48,8 +48,41 @@ type metadataJSON struct {
 	AgentVersion  *string        `json:"agentVersion"`
 	Tags          *tagsJSON      `json:"tags"` // null without a tags entry; tags [] when cleared
 	Name          *string        `json:"name"`
+	Scenario      *string        `json:"scenario"`
+	Project       *projectJSON   `json:"project"`
 	Models        []modelJSON    `json:"models"`
 	Errors        []agentErrJSON `json:"errors"`
+}
+
+type projectJSON struct {
+	Name   string            `json:"name"`
+	Source projectSourceJSON `json:"source"`
+	At     time.Time         `json:"at"`
+}
+
+// projectSourceJSON has dir for a local project, the other fields for a remote one; the
+// fields of the other kind are null.
+type projectSourceJSON struct {
+	Kind     string  `json:"kind"`
+	Dir      *string `json:"dir"`
+	Provider *string `json:"provider"`
+	Repo     *string `json:"repo"`
+	Path     *string `json:"path"`
+	Tag      *string `json:"tag"`
+	Commit   *string `json:"commit"`
+}
+
+func toProjectJSON(p *sessionparser.Project) *projectJSON {
+	if p == nil {
+		return nil
+	}
+	src := projectSourceJSON{Kind: p.Source.Kind}
+	if p.Source.Kind == sessionparser.ProjectLocal {
+		src.Dir = &p.Source.Dir
+	} else {
+		src.Provider, src.Repo, src.Path, src.Tag, src.Commit = &p.Source.Provider, &p.Source.Repo, &p.Source.Path, &p.Source.Tag, &p.Source.Commit
+	}
+	return &projectJSON{Name: p.Name, Source: src, At: p.At.UTC()}
 }
 
 type tagsJSON struct {
@@ -102,6 +135,8 @@ func toMetadataJSON(md sessionparser.Metadata) metadataJSON {
 		ParentSession: md.ParentSession,
 		AgentVersion:  md.AgentVersion,
 		Name:          md.Name,
+		Scenario:      md.Scenario,
+		Project:       toProjectJSON(md.Project),
 		Models:        make([]modelJSON, 0, len(md.Models)),
 		Errors:        make([]agentErrJSON, 0, len(md.Errors)),
 	}

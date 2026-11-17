@@ -51,10 +51,11 @@ func TestMetaAnswersEveryFieldInItsJSONShape(t *testing.T) {
 	m := metadata.Meta{
 		Metadata: sessionparser.Metadata{
 			SessionID: "s1", CWD: "/w", StartedAt: at, FormatVersion: 3,
-			ParentSession: p("/p.jsonl"), AgentVersion: p("0.12.0"), Name: p("review"),
-			Tags:   &sessionparser.Tags{Tags: []string{"b", "a"}, Source: "flag", At: at},
-			Models: []sessionparser.ModelChange{{Provider: "anthropic", ModelID: "claude", At: at}},
-			Errors: []sessionparser.AgentError{{Message: "boom", At: at}},
+			ParentSession: p("/p.jsonl"), AgentVersion: p("0.12.0"), Name: p("review"), Scenario: p("demo"),
+			Project: &sessionparser.Project{Name: "jarvis", At: at, Source: sessionparser.ProjectSource{Kind: sessionparser.ProjectLocal, Dir: "/w"}},
+			Tags:    &sessionparser.Tags{Tags: []string{"b", "a"}, Source: "flag", At: at},
+			Models:  []sessionparser.ModelChange{{Provider: "anthropic", ModelID: "claude", At: at}},
+			Errors:  []sessionparser.AgentError{{Message: "boom", At: at}},
 		},
 		Metrics: &sessionparser.Metrics{
 			Tokens:  sessionparser.Tokens{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4},
@@ -76,7 +77,9 @@ func TestMetaAnswersEveryFieldInItsJSONShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{
 		"metadata": {
 			"sessionId": "s1", "cwd": "/w", "startedAt": "2026-11-16T09:00:00.123Z", "formatVersion": 3,
-			"parentSession": "/p.jsonl", "agentVersion": "0.12.0", "name": "review",
+			"parentSession": "/p.jsonl", "agentVersion": "0.12.0", "name": "review", "scenario": "demo",
+			"project": {"name": "jarvis", "at": "2026-11-16T09:00:00.123Z", "source": {
+				"kind": "local", "dir": "/w", "provider": null, "repo": null, "path": null, "tag": null, "commit": null}},
 			"tags": {"tags": ["b", "a"], "source": "flag", "at": "2026-11-16T09:00:00.123Z"},
 			"models": [{"provider": "anthropic", "modelId": "claude", "at": "2026-11-16T09:00:00.123Z"}],
 			"errors": [{"message": "boom", "at": "2026-11-16T09:00:00.123Z"}]
@@ -105,7 +108,7 @@ func TestMetaAnswersAbsentPartsAsNullAndEmptyLists(t *testing.T) {
 	env := newSessionsEnvWith(t, failingBlobs{}, &oneSession{}, fixedMeta{m})
 	got := env.getMetaJSON(t, "mac", "s1")
 	md := got["metadata"].(map[string]any)
-	for _, k := range []string{"parentSession", "agentVersion", "tags", "name"} {
+	for _, k := range []string{"parentSession", "agentVersion", "tags", "name", "scenario", "project"} {
 		if v, ok := md[k]; !ok || v != nil {
 			t.Errorf("metadata.%s = %v (present %v), want null", k, v, ok)
 		}
@@ -229,4 +232,19 @@ func (brokenMeta) Replace(context.Context, metadata.Meta) error { return errors.
 
 func (brokenMeta) Get(context.Context, session.ID) (metadata.Meta, error) {
 	return metadata.Meta{}, errors.New("database corrupt")
+}
+
+func TestMetaAnswersTheUploadedScenarioAndProject(t *testing.T) {
+	env := newSessionsEnv(t)
+	file := validHeader +
+		`{"type":"custom","customType":"pi-agent.scenario","id":"e1","parentId":null,"timestamp":"2026-11-16T09:00:01.000Z","data":{"version":1,"name":"code-writer"}}` + "\n" +
+		`{"type":"custom","customType":"pi-agent.project","id":"e2","parentId":"e1","timestamp":"2026-11-16T09:00:02.000Z","data":{"version":1,"name":"jarvis","source":{"kind":"remote","provider":"github","repo":"me/jarvis","path":"","tag":"v1","commit":"abc"}}}` + "\n"
+	env.putOK(t, "mac", "s1", ndjson, []byte(file))
+
+	md := env.getMetaJSON(t, "mac", "s1")["metadata"].(map[string]any)
+	project, _ := md["project"].(map[string]any)
+	source, _ := project["source"].(map[string]any)
+	if md["scenario"] != "code-writer" || project["name"] != "jarvis" || source["kind"] != "remote" || source["repo"] != "me/jarvis" || source["commit"] != "abc" {
+		t.Errorf("scenario = %v, project = %v; want code-writer and the remote jarvis project", md["scenario"], project)
+	}
 }
