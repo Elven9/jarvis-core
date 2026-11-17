@@ -63,7 +63,8 @@ func TestUploadStoresParsedMetadataOfEveryGoldenFile(t *testing.T) {
 			gm, wm := got.Metadata, want.Metadata
 			if got.ParserVersion != metadata.ParserVersion() || gm.SessionID != sid ||
 				!reflect.DeepEqual(gm.Name, wm.Name) || !reflect.DeepEqual(gm.AgentVersion, wm.AgentVersion) ||
-				!reflect.DeepEqual(tagList(gm), tagList(wm)) || len(gm.Models) != len(wm.Models) {
+				!reflect.DeepEqual(tagList(gm), tagList(wm)) || len(gm.Models) != len(wm.Models) ||
+				!reflect.DeepEqual(gm.Scenario, wm.Scenario) || !sameProject(gm.Project, wm.Project) {
 				t.Errorf("stored metadata = %+v (parser %q), want what the parser returns: %+v (parser %q)",
 					gm, got.ParserVersion, wm, metadata.ParserVersion())
 			}
@@ -75,6 +76,13 @@ func TestUploadStoresParsedMetadataOfEveryGoldenFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func sameProject(a, b *sessionparser.Project) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Name == b.Name && a.Source == b.Source && a.At.Equal(b.At)
 }
 
 func TestUploadOfSessionWithoutMetricsStoresNullMetrics(t *testing.T) {
