@@ -32,7 +32,7 @@ Parsing is not part of this file; see [../v0.2/metadata-storage-todo.md](../v0.2
 - Body checks: no size limit for now; an empty body is rejected.
 - Content type must be text: `text/*` or `application/x-ndjson` (what the extension sends). Anything else, or no content type, is rejected.
 - Success: `200` only, empty body. Errors use a 4xx/5xx status with a short plain-text body (the client shows its first 200 chars).
-- Read: one route only, `GET /v1/sessions/{machineId}/{sessionId}` (mirrors the PUT path), returns the raw bytes with `content-type: application/x-ndjson`. No `ETag`. Errors use RFC 9457 `application/problem+json`. No list API yet.
+- Read: one route only, `GET /v1/sessions/{machineId}/{sessionId}` (mirrors the PUT path), returns the raw bytes with `content-type: application/x-ndjson`. No `ETag`. (Later moved to `GET /v1/sessions/{machineId}/{sessionId}/raw`; the bare path now answers the parsed session as JSON, see [../TODO.md](../TODO.md#decisions-so-far).) Errors use RFC 9457 `application/problem+json`. No list API yet.
 
 ### Still open
 
