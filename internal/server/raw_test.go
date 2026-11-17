@@ -20,9 +20,9 @@ import (
 	"github.com/Elven9/jarvis-core/internal/session"
 )
 
-func (e *sessionsEnv) get(t *testing.T, machineID, sessionID string) (*http.Response, []byte) {
+func (e *sessionsEnv) getRaw(t *testing.T, machineID, sessionID string) (*http.Response, []byte) {
 	t.Helper()
-	return e.getPath(t, "/v1/sessions/"+url.PathEscape(machineID)+"/"+url.PathEscape(sessionID))
+	return e.getPath(t, "/v1/sessions/"+url.PathEscape(machineID)+"/"+url.PathEscape(sessionID)+"/raw")
 }
 
 func (e *sessionsEnv) getPath(t *testing.T, path string) (*http.Response, []byte) {
@@ -76,69 +76,69 @@ func assertProblem(t *testing.T, resp *http.Response, body []byte, status int) m
 	return p
 }
 
-func TestReadReturnsUploadedBytes(t *testing.T) {
+func TestReadRawReturnsUploadedBytes(t *testing.T) {
 	env := newSessionsEnv(t)
 	sessionFile := piSession(t, "s1")
 	env.putOK(t, "mac-1", "s1", ndjson, sessionFile)
-	resp, body := env.get(t, "mac-1", "s1")
+	resp, body := env.getRaw(t, "mac-1", "s1")
 	assertSession(t, resp, body, sessionFile)
 	if etag := resp.Header.Get("ETag"); etag != "" {
 		t.Errorf("ETag = %q, want none", etag)
 	}
 }
 
-func TestReadReturnsLatestUpload(t *testing.T) {
+func TestReadRawReturnsLatestUpload(t *testing.T) {
 	env := newSessionsEnv(t)
 	v2 := piSession(t, "s1")
 	env.putOK(t, "mac-1", "s1", ndjson, firstLines(v2, 4))
 	env.putOK(t, "mac-1", "s1", ndjson, v2)
-	resp, body := env.get(t, "mac-1", "s1")
+	resp, body := env.getRaw(t, "mac-1", "s1")
 	assertSession(t, resp, body, v2)
 }
 
-func TestReadStreamsLargeSession(t *testing.T) {
+func TestReadRawStreamsLargeSession(t *testing.T) {
 	env := newSessionsEnv(t)
 	content := bigSession(t, "big", 10<<20)
 	env.putOK(t, "mac", "big", ndjson, content)
-	resp, body := env.get(t, "mac", "big")
+	resp, body := env.getRaw(t, "mac", "big")
 	assertSession(t, resp, body, content)
 }
 
-func TestReadDecodesPercentEncodedIDs(t *testing.T) {
+func TestReadRawDecodesPercentEncodedIDs(t *testing.T) {
 	env := newSessionsEnv(t)
 	sessionID := "2026-11-16 a:b%c 中文?#&+"
 	sessionFile := piSession(t, sessionID)
 	env.putOK(t, "Mac.home_1", sessionID, ndjson, sessionFile)
-	resp, body := env.get(t, "Mac.home_1", sessionID)
+	resp, body := env.getRaw(t, "Mac.home_1", sessionID)
 	assertSession(t, resp, body, sessionFile)
 }
 
-func TestReadIDsAreCaseSensitive(t *testing.T) {
+func TestReadRawIDsAreCaseSensitive(t *testing.T) {
 	env := newSessionsEnv(t)
 	env.putOK(t, "mac", "s1", ndjson, piSession(t, "s1"))
-	resp, body := env.get(t, "mac", "S1")
+	resp, body := env.getRaw(t, "mac", "S1")
 	assertProblem(t, resp, body, http.StatusNotFound)
 }
 
-func TestReadOfUnknownSessionIsNotFoundProblem(t *testing.T) {
+func TestReadRawOfUnknownSessionIsNotFoundProblem(t *testing.T) {
 	env := newSessionsEnv(t)
 	env.putOK(t, "mac", "other", ndjson, piSession(t, "other"))
-	resp, body := env.get(t, "mac", "s1")
+	resp, body := env.getRaw(t, "mac", "s1")
 	p := assertProblem(t, resp, body, http.StatusNotFound)
 	if detail, _ := p["detail"].(string); !strings.Contains(detail, "pi:mac:s1") {
 		t.Errorf("detail = %q, want it to name the session", detail)
 	}
 }
 
-func TestReadRejectsInvalidIDsWithProblem(t *testing.T) {
+func TestReadRawRejectsInvalidIDsWithProblem(t *testing.T) {
 	env := newSessionsEnv(t)
 	paths := []string{
-		"/v1/sessions/a%20b/s1",
-		"/v1/sessions/" + strings.Repeat("a", 257) + "/s1",
-		"/v1/sessions/mac/a%2Fb",
-		"/v1/sessions/mac/a%00b",
-		"/v1/sessions/mac/a%FFb",
-		"/v1/sessions/mac/a%zzb",
+		"/v1/sessions/a%20b/s1/raw",
+		"/v1/sessions/" + strings.Repeat("a", 257) + "/s1/raw",
+		"/v1/sessions/mac/a%2Fb/raw",
+		"/v1/sessions/mac/a%00b/raw",
+		"/v1/sessions/mac/a%FFb/raw",
+		"/v1/sessions/mac/a%zzb/raw",
 	}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
@@ -150,20 +150,20 @@ func TestReadRejectsInvalidIDsWithProblem(t *testing.T) {
 	}
 }
 
-func TestReadTypeDefaultsToPiAndRejectsOthers(t *testing.T) {
+func TestReadRawTypeDefaultsToPiAndRejectsOthers(t *testing.T) {
 	env := newSessionsEnv(t)
 	env.putOK(t, "mac", "s1", ndjson, piSession(t, "s1"))
-	resp, body := env.getPath(t, "/v1/sessions/mac/s1?type=pi")
+	resp, body := env.getPath(t, "/v1/sessions/mac/s1/raw?type=pi")
 	assertSession(t, resp, body, piSession(t, "s1"))
 	for _, query := range []string{"?type=claude", "?type=", "?type=PI", "?type=pi&type=pi"} {
-		resp, body := env.getPath(t, "/v1/sessions/mac/s1"+query)
+		resp, body := env.getPath(t, "/v1/sessions/mac/s1/raw"+query)
 		assertProblem(t, resp, body, http.StatusBadRequest)
 	}
 }
 
-func TestReadStoreFailureIsInternalProblemWithoutDetails(t *testing.T) {
+func TestReadRawStoreFailureIsInternalProblemWithoutDetails(t *testing.T) {
 	env := newSessionsEnvWith(t, failingBlobs{}, &oneSession{}, nil)
-	resp, body := env.get(t, "mac", "s1")
+	resp, body := env.getRaw(t, "mac", "s1")
 	p := assertProblem(t, resp, body, http.StatusInternalServerError)
 	if _, ok := p["detail"]; ok {
 		t.Errorf("problem = %v, want no detail for an internal error", p)
@@ -173,11 +173,11 @@ func TestReadStoreFailureIsInternalProblemWithoutDetails(t *testing.T) {
 	}
 }
 
-func TestReadAccessLogHasSessionIDFields(t *testing.T) {
+func TestReadRawAccessLogHasSessionIDFields(t *testing.T) {
 	env := newSessionsEnv(t)
 	env.putOK(t, "mac-1", "s 1", ndjson, piSession(t, "s 1"))
 	env.logs.Reset()
-	env.get(t, "mac-1", "s 1")
+	env.getRaw(t, "mac-1", "s 1")
 	r := onlyRecord(t, env.logs)
 	if r["method"] != "GET" || r["machine_id"] != "mac-1" || r["session_id"] != "s 1" || r["status"] != 200.0 || r["size"] != float64(len(piSession(t, "s 1"))) {
 		t.Errorf("access log = %v, want GET 200 with the ID fields and size", r)

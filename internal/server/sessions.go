@@ -36,13 +36,13 @@ const maxErrorBody = 200
 func (s *Sessions) Register(app *fiber.App) {
 	app.Get("/v1/sessions", s.list)
 	app.Put("/v1/sessions/:machineId/:sessionId", s.upload)
-	app.Get("/v1/sessions/:machineId/:sessionId", s.read)
+	app.Get("/v1/sessions/:machineId/:sessionId/raw", s.readRaw)
 	app.Get("/v1/sessions/:machineId/:sessionId/meta", s.readMeta)
 }
 
-// read answers the session's current raw bytes as application/x-ndjson.
+// readRaw answers the session's current raw bytes as application/x-ndjson.
 // Errors are RFC 9457 problem details.
-func (s *Sessions) read(c fiber.Ctx) error {
+func (s *Sessions) readRaw(c fiber.Ctx) error {
 	id, err := sessionIDFromRequest(c)
 	if err != nil {
 		return newProblem(fiber.StatusBadRequest, err.Error())
