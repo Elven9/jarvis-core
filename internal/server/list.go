@@ -24,6 +24,8 @@ func (s *Sessions) list(c fiber.Ctx) error {
 			Name:         sm.Name,
 			Tags:         sm.Tags,
 			AgentVersion: sm.AgentVersion,
+			Scenario:     sm.Scenario,
+			Project:      sm.Project,
 		}
 		if m := sm.Metrics; m != nil {
 			row.Metrics = &rowMetricsJSON{Tokens: m.Tokens, CostUSD: m.CostUSD, Turns: m.Turns}
@@ -46,6 +48,8 @@ type sessionRowJSON struct {
 	Name         *string         `json:"name"`
 	Tags         []string        `json:"tags"` // null without a tags entry; [] when cleared
 	AgentVersion *string         `json:"agentVersion"`
+	Scenario     *string         `json:"scenario"`
+	Project      *string         `json:"project"` // the project's name
 	Metrics      *rowMetricsJSON `json:"metrics"` // null for a session without metrics
 }
 

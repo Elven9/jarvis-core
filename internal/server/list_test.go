@@ -44,6 +44,7 @@ func TestListAnswersEveryRowFieldInItsJSONShape(t *testing.T) {
 	id := func(m, s string) session.ID { sid, _ := session.NewID(session.TypePi, m, s); return sid }
 	env := newSessionsEnvWith(t, failingBlobs{}, &oneSession{}, listedMeta{
 		{ID: id("mac", "s1"), UploadedAt: at, Name: p("review"), AgentVersion: p("0.12.0"), Tags: []string{"b", "a"},
+			Scenario: p("code-writer"), Project: p("jarvis"),
 			Metrics: &metadata.MetricsSummary{Tokens: sessionparser.Tokens{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4}, CostUSD: 0.5, Turns: 6}},
 		{ID: id("mac", "s2"), UploadedAt: at, Tags: []string{}},
 		{ID: id("mac", "s3"), UploadedAt: at},
@@ -54,12 +55,12 @@ func TestListAnswersEveryRowFieldInItsJSONShape(t *testing.T) {
 	var want map[string]any
 	if err := json.Unmarshal([]byte(`{"sessions": [
 		{"machineId": "mac", "sessionId": "s1", "uploadedAt": "2026-11-16T09:00:00.123Z",
-		 "name": "review", "tags": ["b", "a"], "agentVersion": "0.12.0",
+		 "name": "review", "tags": ["b", "a"], "agentVersion": "0.12.0", "scenario": "code-writer", "project": "jarvis",
 		 "metrics": {"tokens": {"input": 1, "output": 2, "cacheRead": 3, "cacheWrite": 4}, "costUsd": 0.5, "turns": 6}},
 		{"machineId": "mac", "sessionId": "s2", "uploadedAt": "2026-11-16T09:00:00.123Z",
-		 "name": null, "tags": [], "agentVersion": null, "metrics": null},
+		 "name": null, "tags": [], "agentVersion": null, "scenario": null, "project": null, "metrics": null},
 		{"machineId": "mac", "sessionId": "s3", "uploadedAt": "2026-11-16T09:00:00.123Z",
-		 "name": null, "tags": null, "agentVersion": null, "metrics": null}
+		 "name": null, "tags": null, "agentVersion": null, "scenario": null, "project": null, "metrics": null}
 	]}`), &want); err != nil {
 		t.Fatal(err)
 	}
@@ -169,3 +170,14 @@ func (listedMeta) Get(context.Context, session.ID) (metadata.Meta, error) {
 }
 
 func (l listedMeta) List(context.Context) ([]metadata.Summary, error) { return l, nil }
+
+func TestListShowsTheUploadedScenarioAndProject(t *testing.T) {
+	env := newSessionsEnv(t)
+	data := golden(t, "scenario-project")
+	sid := headerID(t, data)
+	env.putOK(t, "mac", sid, ndjson, data)
+	rows := env.listRows(t)
+	if len(rows) != 1 || rows[0]["scenario"] != "code-writer" || rows[0]["project"] != "pi-agent" {
+		t.Errorf("rows = %v, want the session with scenario code-writer and project pi-agent", rows)
+	}
+}
