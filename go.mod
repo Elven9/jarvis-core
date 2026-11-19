@@ -3,7 +3,7 @@ module github.com/Elven9/jarvis-core
 go 1.27.4
 
 require (
-	github.com/Elven9/pi-agent/go v0.2.0
+	github.com/Elven9/pi-agent/go v0.3.0
 	github.com/gofiber/fiber/v3 v3.7.0
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/pressly/goose/v3 v3.30.0

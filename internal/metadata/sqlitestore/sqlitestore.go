@@ -81,10 +81,12 @@ func replace(ctx context.Context, tx execer, m metadata.Meta) error {
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO session_metadata (type, machine_id, session_id, parser_version, header_session_id, cwd,
-			started_at, format_version, parent_session, agent_version, name, tags_source, tags_at, scenario)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			started_at, format_version, parent_session, agent_version, name, tags_source, tags_at, scenario,
+			last_activity_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		append(k, m.ParserVersion, md.SessionID, md.CWD, md.StartedAt.UnixMilli(), md.FormatVersion,
-			md.ParentSession, md.AgentVersion, md.Name, tagsSource, tagsAt, md.Scenario)...); err != nil {
+			md.ParentSession, md.AgentVersion, md.Name, tagsSource, tagsAt, md.Scenario,
+			md.LastActivityAt.UnixMilli())...); err != nil {
 		return fmt.Errorf("insert metadata: %w", err)
 	}
 	if p := md.Project; p != nil {
@@ -187,15 +189,17 @@ func get(ctx context.Context, q querier, id session.ID) (metadata.Meta, error) {
 	md := &m.Metadata
 	var (
 		startedAt  int64
+		activityAt int64
 		tagsSource sql.Null[string]
 		tagsAt     sql.Null[int64]
 	)
 	err := q.QueryRowContext(ctx, `
 		SELECT parser_version, header_session_id, cwd, started_at, format_version,
-			parent_session, agent_version, name, tags_source, tags_at, scenario
+			parent_session, agent_version, name, tags_source, tags_at, scenario,
+			coalesce(last_activity_at, started_at)
 		FROM session_metadata WHERE type = ? AND machine_id = ? AND session_id = ?`, k...).
 		Scan(&m.ParserVersion, &md.SessionID, &md.CWD, &startedAt, &md.FormatVersion,
-			&md.ParentSession, &md.AgentVersion, &md.Name, &tagsSource, &tagsAt, &md.Scenario)
+			&md.ParentSession, &md.AgentVersion, &md.Name, &tagsSource, &tagsAt, &md.Scenario, &activityAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return metadata.Meta{}, metadata.ErrNotFound
 	}
@@ -203,6 +207,7 @@ func get(ctx context.Context, q querier, id session.ID) (metadata.Meta, error) {
 		return metadata.Meta{}, err
 	}
 	md.StartedAt = fromMilli(startedAt)
+	md.LastActivityAt = fromMilli(activityAt)
 
 	if tagsSource.Valid {
 		md.Tags = &sessionparser.Tags{Tags: []string{}, Source: tagsSource.V, At: fromMilli(tagsAt.V)}
