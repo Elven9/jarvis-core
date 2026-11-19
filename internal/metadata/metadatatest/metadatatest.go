@@ -267,7 +267,7 @@ func testListShowsLatestUploadAndMetadata(t *testing.T, s Stores) {
 
 // summaryOf is the list row of a session uploaded at with metadata m.
 func summaryOf(m metadata.Meta, at time.Time) metadata.Summary {
-	sm := metadata.Summary{ID: m.ID, UploadedAt: at, Name: m.Metadata.Name, AgentVersion: m.Metadata.AgentVersion, Scenario: m.Metadata.Scenario}
+	sm := metadata.Summary{ID: m.ID, UploadedAt: at, LastActivityAt: m.Metadata.LastActivityAt, Name: m.Metadata.Name, AgentVersion: m.Metadata.AgentVersion, Scenario: m.Metadata.Scenario}
 	if p := m.Metadata.Project; p != nil {
 		sm.Project = &p.Name
 	}
@@ -297,6 +297,7 @@ func assertSummaries(t *testing.T, got, want []metadata.Summary) {
 		out := slices.Clone(l)
 		for i := range out {
 			out[i].UploadedAt = out[i].UploadedAt.UTC()
+			out[i].LastActivityAt = out[i].LastActivityAt.UTC()
 			if out[i].Tags != nil {
 				out[i].Tags = append([]string{}, out[i].Tags...)
 			}
@@ -328,15 +329,16 @@ func full(t *testing.T, machineID, sessionID string) metadata.Meta {
 	return metadata.Meta{
 		ID: id(t, machineID, sessionID),
 		Metadata: sessionparser.Metadata{
-			SessionID:     sessionID,
-			CWD:           "/Users/me/project",
-			StartedAt:     t0,
-			FormatVersion: 3,
-			ParentSession: ptr("/Users/me/.pi/sessions/parent.jsonl"),
-			AgentVersion:  ptr("0.12.0"),
-			Tags:          &sessionparser.Tags{Tags: []string{"b", "a", "中文"}, Source: "flag", At: t0.Add(time.Second)},
-			Name:          ptr("design review"),
-			Scenario:      ptr("code-writer"),
+			SessionID:      sessionID,
+			CWD:            "/Users/me/project",
+			StartedAt:      t0,
+			LastActivityAt: t0.Add(6 * time.Second),
+			FormatVersion:  3,
+			ParentSession:  ptr("/Users/me/.pi/sessions/parent.jsonl"),
+			AgentVersion:   ptr("0.12.0"),
+			Tags:           &sessionparser.Tags{Tags: []string{"b", "a", "中文"}, Source: "flag", At: t0.Add(time.Second)},
+			Name:           ptr("design review"),
+			Scenario:       ptr("code-writer"),
 			Project: &sessionparser.Project{Name: "jarvis", At: t0.Add(1500 * time.Millisecond), Source: sessionparser.ProjectSource{
 				Kind: sessionparser.ProjectRemote, Provider: "github", Repo: "me/jarvis", Path: "", Tag: "v1.0.0", Commit: "abc123",
 			}},
@@ -377,10 +379,11 @@ func minimal(t *testing.T, machineID, sessionID string) metadata.Meta {
 	return metadata.Meta{
 		ID: id(t, machineID, sessionID),
 		Metadata: sessionparser.Metadata{
-			SessionID:     sessionID,
-			CWD:           "/tmp",
-			StartedAt:     t0,
-			FormatVersion: 3,
+			SessionID:      sessionID,
+			CWD:            "/tmp",
+			StartedAt:      t0,
+			LastActivityAt: t0,
+			FormatVersion:  3,
 		},
 		ParserVersion: "v0.1.0",
 	}

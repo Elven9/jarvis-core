@@ -52,10 +52,12 @@ type Store interface {
 type Summary struct {
 	ID session.ID
 	// UploadedAt is the time of the session's last accepted upload (its session record's).
-	UploadedAt   time.Time
-	Name         *string
-	AgentVersion *string
-	Scenario     *string
+	UploadedAt time.Time
+	// LastActivityAt is the metadata's LastActivityAt: the newest user or assistant message.
+	LastActivityAt time.Time
+	Name           *string
+	AgentVersion   *string
+	Scenario       *string
 	// Project is the project's name; nil without a project.
 	Project *string
 	// Tags are nil without a tags entry, and empty (not nil) when cleared.

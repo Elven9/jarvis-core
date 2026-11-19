@@ -101,7 +101,7 @@ func TestReadParsedAnswersEveryFieldInItsJSONShape(t *testing.T) {
 	ref := 7
 	parsed := metadata.Parsed{
 		Metadata: sessionparser.Metadata{
-			SessionID: "s1", CWD: "/w", StartedAt: at, FormatVersion: 3, Scenario: p("demo"),
+			SessionID: "s1", CWD: "/w", StartedAt: at, LastActivityAt: at, FormatVersion: 3, Scenario: p("demo"),
 			Project: &sessionparser.Project{Name: "jarvis", At: at, Source: sessionparser.ProjectSource{
 				Kind: sessionparser.ProjectRemote, Provider: "github", Repo: "o/r", Path: "", Tag: "v1", Commit: "abc",
 			}},
@@ -146,6 +146,7 @@ func TestReadParsedAnswersEveryFieldInItsJSONShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{
 		"metadata": {
 			"sessionId": "s1", "cwd": "/w", "startedAt": "2026-11-16T09:00:00.123Z", "formatVersion": 3,
+			"lastActivityAt": "2026-11-16T09:00:00.123Z",
 			"parentSession": null, "agentVersion": null, "tags": null, "name": null, "models": [], "errors": [],
 			"scenario": "demo",
 			"project": {"name": "jarvis", "at": "2026-11-16T09:00:00.123Z", "source": {

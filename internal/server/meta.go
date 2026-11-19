@@ -40,18 +40,20 @@ type metaJSON struct {
 }
 
 type metadataJSON struct {
-	SessionID     string         `json:"sessionId"`
-	CWD           string         `json:"cwd"`
-	StartedAt     time.Time      `json:"startedAt"`
-	FormatVersion int            `json:"formatVersion"`
-	ParentSession *string        `json:"parentSession"`
-	AgentVersion  *string        `json:"agentVersion"`
-	Tags          *tagsJSON      `json:"tags"` // null without a tags entry; tags [] when cleared
-	Name          *string        `json:"name"`
-	Scenario      *string        `json:"scenario"`
-	Project       *projectJSON   `json:"project"`
-	Models        []modelJSON    `json:"models"`
-	Errors        []agentErrJSON `json:"errors"`
+	SessionID string    `json:"sessionId"`
+	CWD       string    `json:"cwd"`
+	StartedAt time.Time `json:"startedAt"`
+	// LastActivityAt is the newest user or assistant message; startedAt when there is none.
+	LastActivityAt time.Time      `json:"lastActivityAt"`
+	FormatVersion  int            `json:"formatVersion"`
+	ParentSession  *string        `json:"parentSession"`
+	AgentVersion   *string        `json:"agentVersion"`
+	Tags           *tagsJSON      `json:"tags"` // null without a tags entry; tags [] when cleared
+	Name           *string        `json:"name"`
+	Scenario       *string        `json:"scenario"`
+	Project        *projectJSON   `json:"project"`
+	Models         []modelJSON    `json:"models"`
+	Errors         []agentErrJSON `json:"errors"`
 }
 
 type projectJSON struct {
@@ -128,17 +130,18 @@ func toMetaJSON(m metadata.Meta) metaJSON {
 
 func toMetadataJSON(md sessionparser.Metadata) metadataJSON {
 	out := metadataJSON{
-		SessionID:     md.SessionID,
-		CWD:           md.CWD,
-		StartedAt:     md.StartedAt.UTC(),
-		FormatVersion: md.FormatVersion,
-		ParentSession: md.ParentSession,
-		AgentVersion:  md.AgentVersion,
-		Name:          md.Name,
-		Scenario:      md.Scenario,
-		Project:       toProjectJSON(md.Project),
-		Models:        make([]modelJSON, 0, len(md.Models)),
-		Errors:        make([]agentErrJSON, 0, len(md.Errors)),
+		SessionID:      md.SessionID,
+		CWD:            md.CWD,
+		StartedAt:      md.StartedAt.UTC(),
+		LastActivityAt: md.LastActivityAt.UTC(),
+		FormatVersion:  md.FormatVersion,
+		ParentSession:  md.ParentSession,
+		AgentVersion:   md.AgentVersion,
+		Name:           md.Name,
+		Scenario:       md.Scenario,
+		Project:        toProjectJSON(md.Project),
+		Models:         make([]modelJSON, 0, len(md.Models)),
+		Errors:         make([]agentErrJSON, 0, len(md.Errors)),
 	}
 	if md.Tags != nil {
 		out.Tags = &tagsJSON{Tags: append([]string{}, md.Tags.Tags...), Source: md.Tags.Source, At: md.Tags.At.UTC()}

@@ -43,23 +43,23 @@ func TestListAnswersEveryRowFieldInItsJSONShape(t *testing.T) {
 	p := func(s string) *string { return &s }
 	id := func(m, s string) session.ID { sid, _ := session.NewID(session.TypePi, m, s); return sid }
 	env := newSessionsEnvWith(t, failingBlobs{}, &oneSession{}, listedMeta{
-		{ID: id("mac", "s1"), UploadedAt: at, Name: p("review"), AgentVersion: p("0.12.0"), Tags: []string{"b", "a"},
+		{ID: id("mac", "s1"), UploadedAt: at, LastActivityAt: at.Add(-time.Hour), Name: p("review"), AgentVersion: p("0.12.0"), Tags: []string{"b", "a"},
 			Scenario: p("code-writer"), Project: p("jarvis"),
 			Metrics: &metadata.MetricsSummary{Tokens: sessionparser.Tokens{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4}, CostUSD: 0.5, Turns: 6}},
-		{ID: id("mac", "s2"), UploadedAt: at, Tags: []string{}},
-		{ID: id("mac", "s3"), UploadedAt: at},
+		{ID: id("mac", "s2"), UploadedAt: at, LastActivityAt: at, Tags: []string{}},
+		{ID: id("mac", "s3"), UploadedAt: at, LastActivityAt: at},
 	})
 	resp, body := env.getPath(t, "/v1/sessions")
 	got := decodeJSON(t, resp, body)
 
 	var want map[string]any
 	if err := json.Unmarshal([]byte(`{"sessions": [
-		{"machineId": "mac", "sessionId": "s1", "uploadedAt": "2026-11-16T09:00:00.123Z",
+		{"machineId": "mac", "sessionId": "s1", "uploadedAt": "2026-11-16T09:00:00.123Z", "lastActivityAt": "2026-11-16T08:00:00.123Z",
 		 "name": "review", "tags": ["b", "a"], "agentVersion": "0.12.0", "scenario": "code-writer", "project": "jarvis",
 		 "metrics": {"tokens": {"input": 1, "output": 2, "cacheRead": 3, "cacheWrite": 4}, "costUsd": 0.5, "turns": 6}},
-		{"machineId": "mac", "sessionId": "s2", "uploadedAt": "2026-11-16T09:00:00.123Z",
+		{"machineId": "mac", "sessionId": "s2", "uploadedAt": "2026-11-16T09:00:00.123Z", "lastActivityAt": "2026-11-16T09:00:00.123Z",
 		 "name": null, "tags": [], "agentVersion": null, "scenario": null, "project": null, "metrics": null},
-		{"machineId": "mac", "sessionId": "s3", "uploadedAt": "2026-11-16T09:00:00.123Z",
+		{"machineId": "mac", "sessionId": "s3", "uploadedAt": "2026-11-16T09:00:00.123Z", "lastActivityAt": "2026-11-16T09:00:00.123Z",
 		 "name": null, "tags": null, "agentVersion": null, "scenario": null, "project": null, "metrics": null}
 	]}`), &want); err != nil {
 		t.Fatal(err)

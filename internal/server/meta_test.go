@@ -50,7 +50,7 @@ func TestMetaAnswersEveryFieldInItsJSONShape(t *testing.T) {
 	f := func(v float64) *float64 { return &v }
 	m := metadata.Meta{
 		Metadata: sessionparser.Metadata{
-			SessionID: "s1", CWD: "/w", StartedAt: at, FormatVersion: 3,
+			SessionID: "s1", CWD: "/w", StartedAt: at, LastActivityAt: at.Add(time.Hour), FormatVersion: 3,
 			ParentSession: p("/p.jsonl"), AgentVersion: p("0.12.0"), Name: p("review"), Scenario: p("demo"),
 			Project: &sessionparser.Project{Name: "jarvis", At: at, Source: sessionparser.ProjectSource{Kind: sessionparser.ProjectLocal, Dir: "/w"}},
 			Tags:    &sessionparser.Tags{Tags: []string{"b", "a"}, Source: "flag", At: at},
@@ -77,6 +77,7 @@ func TestMetaAnswersEveryFieldInItsJSONShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{
 		"metadata": {
 			"sessionId": "s1", "cwd": "/w", "startedAt": "2026-11-16T09:00:00.123Z", "formatVersion": 3,
+			"lastActivityAt": "2026-11-16T10:00:00.123Z",
 			"parentSession": "/p.jsonl", "agentVersion": "0.12.0", "name": "review", "scenario": "demo",
 			"project": {"name": "jarvis", "at": "2026-11-16T09:00:00.123Z", "source": {
 				"kind": "local", "dir": "/w", "provider": null, "repo": null, "path": null, "tag": null, "commit": null}},

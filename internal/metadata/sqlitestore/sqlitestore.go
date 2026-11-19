@@ -349,7 +349,8 @@ func getMetrics(ctx context.Context, q querier, k []any) (*sessionparser.Metrics
 func (s *Store) List(ctx context.Context) ([]metadata.Summary, error) {
 	out := []metadata.Summary{}
 	err := queryEach(ctx, s.db, `
-		SELECT m.type, m.machine_id, m.session_id, s.last_uploaded_at, m.name, m.agent_version,
+		SELECT m.type, m.machine_id, m.session_id, s.last_uploaded_at,
+			coalesce(m.last_activity_at, m.started_at), m.name, m.agent_version,
 			m.scenario, p.name, m.tags_source IS NOT NULL,
 			(SELECT json_group_array(tag) FROM (
 				SELECT tag FROM session_tags t
@@ -368,12 +369,12 @@ func (s *Store) List(ctx context.Context) ([]metadata.Summary, error) {
 			var (
 				sm                  metadata.Summary
 				typ                 string
-				at                  int64
+				at, activityAt      int64
 				hasTags, hasMetrics bool
 				tags                string
 				ms                  metadata.MetricsSummary
 			)
-			if err := rows.Scan(&typ, &sm.ID.MachineID, &sm.ID.SessionID, &at, &sm.Name, &sm.AgentVersion,
+			if err := rows.Scan(&typ, &sm.ID.MachineID, &sm.ID.SessionID, &at, &activityAt, &sm.Name, &sm.AgentVersion,
 				&sm.Scenario, &sm.Project, &hasTags, &tags, &hasMetrics,
 				&ms.Tokens.Input, &ms.Tokens.Output, &ms.Tokens.CacheRead, &ms.Tokens.CacheWrite,
 				&ms.CostUSD, &ms.Turns); err != nil {
@@ -381,6 +382,7 @@ func (s *Store) List(ctx context.Context) ([]metadata.Summary, error) {
 			}
 			sm.ID.Type = session.Type(typ)
 			sm.UploadedAt = fromMilli(at)
+			sm.LastActivityAt = fromMilli(activityAt)
 			if hasTags {
 				sm.Tags = []string{}
 				if err := json.Unmarshal([]byte(tags), &sm.Tags); err != nil {

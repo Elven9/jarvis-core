@@ -18,14 +18,15 @@ func (s *Sessions) list(c fiber.Ctx) error {
 	out := listJSON{Sessions: make([]sessionRowJSON, 0, len(summaries))}
 	for _, sm := range summaries {
 		row := sessionRowJSON{
-			MachineID:    sm.ID.MachineID,
-			SessionID:    sm.ID.SessionID,
-			UploadedAt:   sm.UploadedAt.UTC(),
-			Name:         sm.Name,
-			Tags:         sm.Tags,
-			AgentVersion: sm.AgentVersion,
-			Scenario:     sm.Scenario,
-			Project:      sm.Project,
+			MachineID:      sm.ID.MachineID,
+			SessionID:      sm.ID.SessionID,
+			UploadedAt:     sm.UploadedAt.UTC(),
+			LastActivityAt: sm.LastActivityAt.UTC(),
+			Name:           sm.Name,
+			Tags:           sm.Tags,
+			AgentVersion:   sm.AgentVersion,
+			Scenario:       sm.Scenario,
+			Project:        sm.Project,
 		}
 		if m := sm.Metrics; m != nil {
 			row.Metrics = &rowMetricsJSON{Tokens: m.Tokens, CostUSD: m.CostUSD, Turns: m.Turns}
@@ -42,15 +43,17 @@ type listJSON struct {
 
 // sessionRowJSON is one session in the list. Absent values are null.
 type sessionRowJSON struct {
-	MachineID    string          `json:"machineId"`
-	SessionID    string          `json:"sessionId"`
-	UploadedAt   time.Time       `json:"uploadedAt"` // last accepted upload
-	Name         *string         `json:"name"`
-	Tags         []string        `json:"tags"` // null without a tags entry; [] when cleared
-	AgentVersion *string         `json:"agentVersion"`
-	Scenario     *string         `json:"scenario"`
-	Project      *string         `json:"project"` // the project's name
-	Metrics      *rowMetricsJSON `json:"metrics"` // null for a session without metrics
+	MachineID  string    `json:"machineId"`
+	SessionID  string    `json:"sessionId"`
+	UploadedAt time.Time `json:"uploadedAt"` // last accepted upload
+	// LastActivityAt is the newest user or assistant message in the session.
+	LastActivityAt time.Time       `json:"lastActivityAt"`
+	Name           *string         `json:"name"`
+	Tags           []string        `json:"tags"` // null without a tags entry; [] when cleared
+	AgentVersion   *string         `json:"agentVersion"`
+	Scenario       *string         `json:"scenario"`
+	Project        *string         `json:"project"` // the project's name
+	Metrics        *rowMetricsJSON `json:"metrics"` // null for a session without metrics
 }
 
 type rowMetricsJSON struct {
