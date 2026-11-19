@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/Elven9/jarvis-core/compare/v0.3.0...v0.4.0) (2026-11-19)
+
+
+### Features
+
+* **server:** expose the last activity time of each session ([0555fcd](https://github.com/Elven9/jarvis-core/commit/0555fcd206ece33e9e4f85e1e55955b9d8f8051e))
+
+
+### Bug Fixes
+
+* **deps:** upgrade session-parser to v0.3.0 ([0ef50b9](https://github.com/Elven9/jarvis-core/commit/0ef50b9600c49153db17c0e3683a1dec5796cd1f))
+
 ## [0.3.0](https://github.com/Elven9/jarvis-core/compare/v0.2.1...v0.3.0) (2026-11-17)
 
 
